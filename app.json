@@ -49,9 +49,5 @@
         }
       ]
     ],
-    "updates": {
-      "url": "https://u.expo.dev/formato-de-campo-v2"
-    },
-    "runtimeVersion": "1.0.0"
   }
 }

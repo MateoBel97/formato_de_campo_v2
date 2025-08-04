@@ -1,0 +1,57 @@
+{
+  "expo": {
+    "name": "Formato de Campo V2",
+    "slug": "formato-de-campo-v2",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#2E7D32"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.formatocampo.v2"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#2E7D32"
+      },
+      "package": "com.formatocampo.v2",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ]
+    },
+    "plugins": [
+      "expo-location",
+      "expo-camera",
+      "expo-image-picker",
+      "expo-media-library",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "La app necesita acceso a las fotos para guardar las imágenes tomadas durante las mediciones.",
+          "cameraPermission": "La app necesita acceso a la cámara para tomar fotos durante las mediciones acústicas.",
+          "microphonePermission": false
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "La app necesita acceso a la ubicación para asociar coordenadas GPS a las fotos de las mediciones."
+        }
+      ]
+    ],
+    "updates": {
+      "url": "https://u.expo.dev/formato-de-campo-v2"
+    },
+    "runtimeVersion": "1.0.0"
+  }
+}

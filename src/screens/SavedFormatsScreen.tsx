@@ -148,9 +148,10 @@ const styles = StyleSheet.create({
     padding: 8,
   },
   title: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: 'bold',
     color: COLORS.text,
+    marginBottom: 8,
   },
   placeholder: {
     width: 40,

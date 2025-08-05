@@ -37,6 +37,7 @@ export interface TechnicalInfo {
     selected: string;
     other?: string;
   };
+  scanningMethod: string;
 }
 
 export interface EmissionInterval {
@@ -183,6 +184,7 @@ export type AppAction =
   | { type: 'UPDATE_INSPECTION_DATA'; payload: InspectionData }
   | { type: 'ADD_MEASUREMENT_RESULT'; payload: MeasurementResults }
   | { type: 'UPDATE_MEASUREMENT_RESULT'; payload: { index: number; result: MeasurementResults } }
+  | { type: 'UPDATE_MEASUREMENT_RESULT_DATA'; payload: { pointId: string; schedule: 'diurnal' | 'nocturnal'; type: MeasurementType; data: any } }
   | { type: 'UPDATE_QUALITATIVE_DATA'; payload: QualitativeData }
   | { type: 'ADD_EXTERNAL_EVENT'; payload: ExternalEvent }
   | { type: 'DELETE_EXTERNAL_EVENT'; payload: string }

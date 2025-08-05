@@ -75,6 +75,13 @@ export const WEATHER_STATIONS = [
   { label: 'N/A', value: 'N/A' },
 ];
 
+export const SCANNING_METHODS = [
+  { label: 'Seleccione el método de barrido usado', value: '' },
+  { label: 'Cinta métrica', value: 'tape_measure' },
+  { label: 'Tiza o cinta visible', value: 'chalk_tape' },
+  { label: 'Cuerda guía', value: 'guide_rope' },
+];
+
 export const DRAWER_ITEMS = [
   {
     name: 'GeneralInfo',

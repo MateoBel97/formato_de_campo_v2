@@ -64,9 +64,9 @@ const PhotoRegistryScreen: React.FC = () => {
 
       if (!result.canceled && result.assets[0]) {
         const timestamp = new Date().toISOString();
-        const photoUri = result.assets[0].uri; // Usar URI original directamente
+        const photoUri = result.assets[0].uri;
         
-        // Crear foto inmediatamente sin GPS para UI rápida
+        // Create photo immediately for UI without watermark
         const tempPhoto: Photo = {
           id: Date.now().toString(),
           uri: photoUri,
@@ -80,32 +80,27 @@ const PhotoRegistryScreen: React.FC = () => {
         addPhoto(tempPhoto);
         console.log('Photo added successfully');
 
-        // Obtener GPS en background de forma no bloqueante
+        // Get GPS location in background for export metadata
         setTimeout(async () => {
           try {
-            const locationPromise = Location.getCurrentPositionAsync({
-              accuracy: Location.Accuracy.Low, // Usar precisión baja para velocidad
+            const locationResult = await Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.Low,
               timeInterval: 1000,
               distanceInterval: 0,
             });
-            
-            const timeoutPromise = new Promise<never>((_, reject) =>
-              setTimeout(() => reject(new Error('GPS timeout')), 2000)
-            );
-
-            const locationResult = await Promise.race([locationPromise, timeoutPromise]);
             const location = {
               latitude: locationResult.coords.latitude,
               longitude: locationResult.coords.longitude,
             };
 
-            console.log('GPS obtenido en background:', location);
-            // Aquí podrías actualizar la foto con la ubicación si es necesario
+            console.log('GPS obtained for export metadata:', location);
+            // Update photo with location for export
+            // This would need to be implemented in the context to update existing photo
             
           } catch (error) {
-            console.log('GPS no disponible, continuando sin ubicación:', error);
+            console.log('GPS not available, will export without location:', error);
           }
-        }, 100); // Ejecutar después de 100ms para no bloquear UI
+        }, 100);
       }
     } catch (error) {
       Alert.alert('Error', 'No se pudo tomar la foto');

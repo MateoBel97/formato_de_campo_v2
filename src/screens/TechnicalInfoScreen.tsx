@@ -1,13 +1,12 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { Formik } from 'formik';
 import * as Yup from 'yup';
 import { useMeasurement } from '../context/MeasurementContext';
 import FormInput from '../components/FormInput';
 import FormPicker from '../components/FormPicker';
 import FormCheckbox from '../components/FormCheckbox';
-import FormButton from '../components/FormButton';
-import { COLORS, MEASUREMENT_TYPES, SOUND_METERS, CALIBRATORS, WEATHER_STATIONS } from '../constants';
+import { COLORS, MEASUREMENT_TYPES, SOUND_METERS, CALIBRATORS, WEATHER_STATIONS, SCANNING_METHODS } from '../constants';
 import { TechnicalInfo } from '../types';
 
 const validationSchema = Yup.object({
@@ -39,26 +38,41 @@ const validationSchema = Yup.object({
       then: (schema) => schema.required('Especifique la estación meteorológica'),
     }),
   }),
+  scanningMethod: Yup.string().required('El método de barrido usado es requerido'),
 });
 
 const TechnicalInfoScreen: React.FC = () => {
-  const { state, updateTechnicalInfo } = useMeasurement();
-  const [isSaving, setIsSaving] = useState(false);
+  const { state, updateTechnicalInfo, saveCurrentFormat } = useMeasurement();
+  const [saveTimeout, setSaveTimeout] = useState<NodeJS.Timeout | null>(null);
 
   const currentFormat = state.currentFormat;
   const technicalInfo = currentFormat?.technicalInfo;
 
-  const handleSave = async (values: TechnicalInfo) => {
-    try {
-      setIsSaving(true);
-      updateTechnicalInfo(values);
-      Alert.alert('Éxito', 'Información técnica guardada correctamente');
-    } catch (error) {
-      Alert.alert('Error', 'No se pudo guardar la información técnica');
-    } finally {
-      setIsSaving(false);
+  const handleAutoSave = async (values: TechnicalInfo) => {
+    if (saveTimeout) {
+      clearTimeout(saveTimeout);
     }
+
+    const timeout = setTimeout(async () => {
+      try {
+        updateTechnicalInfo(values);
+        await saveCurrentFormat();
+        console.log('Technical info auto-saved successfully');
+      } catch (error) {
+        console.error('Error auto-saving technical info:', error);
+      }
+    }, 500);
+
+    setSaveTimeout(timeout);
   };
+
+  useEffect(() => {
+    return () => {
+      if (saveTimeout) {
+        clearTimeout(saveTimeout);
+      }
+    };
+  }, [saveTimeout]);
 
   if (!currentFormat) {
     return (
@@ -95,12 +109,18 @@ const TechnicalInfoScreen: React.FC = () => {
               selected: '',
               other: '',
             },
+            scanningMethod: '',
           }}
           validationSchema={validationSchema}
-          onSubmit={handleSave}
+          onSubmit={() => {}}
           enableReinitialize
         >
-          {({ values, errors, touched, handleChange, setFieldValue, handleSubmit }) => (
+          {({ values, errors, touched, handleChange, setFieldValue }) => {
+            useEffect(() => {
+              handleAutoSave(values);
+            }, [values]);
+
+            return (
             <View>
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Tipo de Medición</Text>
@@ -203,15 +223,21 @@ const TechnicalInfoScreen: React.FC = () => {
                 )}
               </View>
 
-              <FormButton
-                title={isSaving ? 'Guardando...' : 'Guardar Información'}
-                onPress={handleSubmit}
-                loading={isSaving}
-                size="large"
-                style={styles.saveButton}
-              />
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Método de Barrido Usado</Text>
+                <FormPicker
+                  label="Método de barrido usado"
+                  value={values.scanningMethod}
+                  onSelect={(value) => setFieldValue('scanningMethod', value)}
+                  options={SCANNING_METHODS}
+                  error={touched.scanningMethod && errors.scanningMethod ? errors.scanningMethod : undefined}
+                  required
+                />
+              </View>
+
             </View>
-          )}
+            );
+          }}
         </Formik>
       </View>
     </ScrollView>
@@ -257,10 +283,6 @@ const styles = StyleSheet.create({
   },
   checkboxRow: {
     flex: 1,
-  },
-  saveButton: {
-    marginTop: 8,
-    marginBottom: 32,
   },
   errorContainer: {
     flex: 1,

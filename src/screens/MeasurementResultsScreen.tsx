@@ -1,15 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Animated } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useMeasurement } from '../context/MeasurementContext';
 import FormPicker from '../components/FormPicker';
 import FormInput from '../components/FormInput';
-import NativeTimePicker from '../components/NativeTimePicker';
+import TimePicker from '../components/TimePicker';
 import { COLORS, EMISSION_INTERVALS, RESIDUAL_INTERVALS } from '../constants';
 import { MeasurementType } from '../types';
 
 const MeasurementResultsScreen: React.FC = () => {
-  const { state, dispatch } = useMeasurement();
+  const { state, updateMeasurementResultData, saveCurrentFormat } = useMeasurement();
   const [selectedPoint, setSelectedPoint] = useState('');
   const [selectedSchedule, setSelectedSchedule] = useState('');
   const [selectedMeasurementType, setSelectedMeasurementType] = useState('emission');
@@ -17,7 +17,7 @@ const MeasurementResultsScreen: React.FC = () => {
   const [selectedResidualInterval, setSelectedResidualInterval] = useState(0);
   const [selectedAmbientDirection, setSelectedAmbientDirection] = useState('N');
   const [selectedAmbientInterval, setSelectedAmbientInterval] = useState(0);
-  const [measurementData, setMeasurementData] = useState<any>({});
+  // Remove local state - we'll use context data directly
   const [toastOpacity] = useState(new Animated.Value(0));
   const [toastMessage, setToastMessage] = useState('');
 
@@ -108,50 +108,172 @@ const MeasurementResultsScreen: React.FC = () => {
     return `${endHour}:${formattedMinute} ${endPeriod}`;
   };
 
-  // Generate unique key for storing measurement data
-  const getDataKey = (pointIndex: string, schedule: string, type: string, intervalIndex: number) => {
-    return `${pointIndex}_${schedule}_${type}_${intervalIndex}`;
+  // Get measurement data from context
+  const getMeasurementResult = (pointId: string, schedule: 'diurnal' | 'nocturnal', type: MeasurementType) => {
+    if (!currentFormat) return null;
+    return currentFormat.measurementResults.find(
+      result => result.pointId === pointId && result.schedule === schedule && result.type === type
+    );
   };
 
   // Get measurement data for current selection
   const getCurrentMeasurement = (type: string, intervalIndex: number) => {
-    const key = getDataKey(selectedPoint, selectedSchedule, type, intervalIndex);
-    return measurementData[key] || {
-      soundLevel: '',
-      percentile90: '',
-      fileNumber: '',
-      startTime: '',
-      endTime: '',
+    if (!selectedPoint || !selectedSchedule || !currentFormat) {
+      return {
+        soundLevel: '',
+        percentile90: '',
+        fileNumber: '',
+        startTime: '',
+        endTime: '',
+        calibrationPre: '',
+        calibrationPost: '',
+      };
+    }
+
+    const pointId = currentFormat.measurementPoints[parseInt(selectedPoint)]?.id;
+    const result = getMeasurementResult(pointId, selectedSchedule as 'diurnal' | 'nocturnal', 'emission');
+    
+    if (!result?.emission) {
+      return {
+        soundLevel: '',
+        percentile90: '',
+        fileNumber: '',
+        startTime: '',
+        endTime: '',
+        calibrationPre: '',
+        calibrationPost: '',
+      };
+    }
+
+    const intervals = type === 'emission' ? result.emission.emission : result.emission.residual;
+    const intervalData = intervals.data[intervalIndex];
+    
+    if (!intervalData) {
+      return {
+        soundLevel: '',
+        percentile90: '',
+        fileNumber: '',
+        startTime: '',
+        endTime: '',
+        calibrationPre: '',
+        calibrationPost: '',
+      };
+    }
+
+    return {
+      soundLevel: intervalData.soundLevel?.toString() || '',
+      percentile90: intervalData.percentile90?.toString() || '',
+      fileNumber: intervalData.fileNumber?.toString() || '',
+      startTime: intervalData.initialTime || '',
+      endTime: intervalData.finalTime || '',
       calibrationPre: '',
       calibrationPost: '',
     };
   };
 
-  // Save measurement data
+  // Save measurement data to context
   const saveMeasurementData = (type: string, intervalIndex: number, field: string, value: string) => {
-    const key = getDataKey(selectedPoint, selectedSchedule, type, intervalIndex);
-    setMeasurementData(prev => ({
-      ...prev,
-      [key]: {
-        ...prev[key],
-        [field]: value,
-      }
-    }));
+    if (!selectedPoint || !selectedSchedule || !currentFormat) return;
+    
+    const pointId = currentFormat.measurementPoints[parseInt(selectedPoint)]?.id;
+    if (!pointId) return;
+
+    const result = getMeasurementResult(pointId, selectedSchedule as 'diurnal' | 'nocturnal', 'emission');
+    
+    let emissionData = result?.emission || {
+      emission: { intervals: 1, data: [] },
+      residual: { intervals: 0, data: [] }
+    };
+
+    // Ensure intervals array exists and has correct length
+    const intervals = type === 'emission' ? emissionData.emission : emissionData.residual;
+    while (intervals.data.length <= intervalIndex) {
+      intervals.data.push({
+        soundLevel: 0,
+        percentile90: 0,
+        fileNumber: 0,
+        initialTime: '',
+        finalTime: '',
+      });
+    }
+
+    // Update the specific field
+    const intervalData = intervals.data[intervalIndex];
+    if (field === 'soundLevel' || field === 'percentile90' || field === 'fileNumber') {
+      intervalData[field] = parseFloat(value) || 0;
+    } else if (field === 'startTime') {
+      intervalData.initialTime = value;
+    } else if (field === 'endTime') {
+      intervalData.finalTime = value;
+    }
+
+    // Update context
+    updateMeasurementResultData(pointId, selectedSchedule as 'diurnal' | 'nocturnal', 'emission', emissionData);
+    triggerAutoSave();
   };
 
   // Get number of intervals for current data
   const getIntervalsCount = (type: string) => {
-    const prefix = `${selectedPoint}_${selectedSchedule}_${type}_intervals`;
-    return measurementData[prefix] || (type === 'emission' ? 1 : 0);
+    if (!selectedPoint || !selectedSchedule || !currentFormat) {
+      return type === 'emission' ? 1 : 0;
+    }
+
+    const pointId = currentFormat.measurementPoints[parseInt(selectedPoint)]?.id;
+    const result = getMeasurementResult(pointId, selectedSchedule as 'diurnal' | 'nocturnal', 'emission');
+    
+    if (!result?.emission) {
+      return type === 'emission' ? 1 : 0;
+    }
+
+    const intervals = type === 'emission' ? result.emission.emission : result.emission.residual;
+    return intervals.intervals;
   };
 
   // Save intervals count
   const saveIntervalsCount = (type: string, count: number) => {
-    const prefix = `${selectedPoint}_${selectedSchedule}_${type}_intervals`;
-    setMeasurementData(prev => ({
-      ...prev,
-      [prefix]: count,
-    }));
+    if (!selectedPoint || !selectedSchedule || !currentFormat) return;
+    
+    const pointId = currentFormat.measurementPoints[parseInt(selectedPoint)]?.id;
+    if (!pointId) return;
+
+    const result = getMeasurementResult(pointId, selectedSchedule as 'diurnal' | 'nocturnal', 'emission');
+    
+    let emissionData = result?.emission || {
+      emission: { intervals: 1, data: [] },
+      residual: { intervals: 0, data: [] }
+    };
+
+    // Update intervals count
+    if (type === 'emission') {
+      emissionData.emission.intervals = count;
+      // Adjust data array length
+      while (emissionData.emission.data.length < count) {
+        emissionData.emission.data.push({
+          soundLevel: 0,
+          percentile90: 0,
+          fileNumber: 0,
+          initialTime: '',
+          finalTime: '',
+        });
+      }
+      emissionData.emission.data = emissionData.emission.data.slice(0, count);
+    } else {
+      emissionData.residual.intervals = count;
+      // Adjust data array length
+      while (emissionData.residual.data.length < count) {
+        emissionData.residual.data.push({
+          soundLevel: 0,
+          percentile90: 0,
+          fileNumber: 0,
+          initialTime: '',
+          finalTime: '',
+        });
+      }
+      emissionData.residual.data = emissionData.residual.data.slice(0, count);
+    }
+
+    updateMeasurementResultData(pointId, selectedSchedule as 'diurnal' | 'nocturnal', 'emission', emissionData);
+    triggerAutoSave();
   };
 
   const renderPointButtons = () => {
@@ -464,6 +586,7 @@ const MeasurementResultsScreen: React.FC = () => {
           label="LAeq (dBA)"
           value={measurement.soundLevel}
           onChangeText={(text) => saveAmbientMeasurementData(direction, 'soundLevel', text)}
+          onBlur={() => triggerAutoSave()}
           keyboardType="numeric"
           placeholder="0.0"
           horizontal
@@ -473,12 +596,13 @@ const MeasurementResultsScreen: React.FC = () => {
           label="# archivo"
           value={measurement.fileNumber}
           onChangeText={(text) => saveAmbientMeasurementData(direction, 'fileNumber', text)}
+          onBlur={() => triggerAutoSave()}
           keyboardType="numeric"
           placeholder="000"
           horizontal
         />
         
-        <NativeTimePicker
+        <TimePicker
           label="Hora inicial"
           value={measurement.startTime}
           onTimeChange={(time) => {
@@ -494,7 +618,7 @@ const MeasurementResultsScreen: React.FC = () => {
           horizontal
         />
         
-        <NativeTimePicker
+        <TimePicker
           label="Hora final"
           value={measurement.endTime}
           onTimeChange={(time) => saveAmbientMeasurementData(direction, 'endTime', time)}
@@ -505,6 +629,7 @@ const MeasurementResultsScreen: React.FC = () => {
           label="Cal PRE (dB)"
           value={measurement.calibrationPre}
           onChangeText={(text) => saveAmbientMeasurementData(direction, 'calibrationPre', text)}
+          onBlur={() => triggerAutoSave()}
           keyboardType="numeric"
           placeholder=""
           horizontal
@@ -514,6 +639,7 @@ const MeasurementResultsScreen: React.FC = () => {
           label="Cal POST (dB)"
           value={measurement.calibrationPost}
           onChangeText={(text) => saveAmbientMeasurementData(direction, 'calibrationPost', text)}
+          onBlur={() => triggerAutoSave()}
           keyboardType="numeric"
           placeholder=""
           horizontal
@@ -524,32 +650,98 @@ const MeasurementResultsScreen: React.FC = () => {
 
   // Get ambient measurement data for current selection
   const getCurrentAmbientMeasurement = (direction: string) => {
-    const key = getAmbientDataKey(selectedPoint, selectedSchedule, direction);
-    return measurementData[key] || {
-      soundLevel: '',
-      fileNumber: '',
-      startTime: '',
-      endTime: '',
+    if (!selectedPoint || !selectedSchedule || !currentFormat) {
+      return {
+        soundLevel: '',
+        fileNumber: '',
+        startTime: '',
+        endTime: '',
+        calibrationPre: '',
+        calibrationPost: '',
+      };
+    }
+
+    const pointId = currentFormat.measurementPoints[parseInt(selectedPoint)]?.id;
+    const result = getMeasurementResult(pointId, selectedSchedule as 'diurnal' | 'nocturnal', 'ambient');
+    
+    if (!result?.ambient) {
+      return {
+        soundLevel: '',
+        fileNumber: '',
+        startTime: '',
+        endTime: '',
+        calibrationPre: '',
+        calibrationPost: '',
+      };
+    }
+
+    const directionKey = `level${direction}` as keyof typeof result.ambient;
+    const fileKey = `fileNumber${direction}` as keyof typeof result.ambient;
+    
+    return {
+      soundLevel: result.ambient[directionKey] || '',
+      fileNumber: result.ambient[fileKey] || '',
+      startTime: result.ambient.initialTime || '',
+      endTime: result.ambient.finalTime || '',
       calibrationPre: '',
       calibrationPost: '',
     };
   };
 
-  // Generate unique key for storing ambient measurement data
-  const getAmbientDataKey = (pointIndex: string, schedule: string, direction: string) => {
-    return `${pointIndex}_${schedule}_ambient_${direction}`;
+  // Auto-save function with debounce
+  const debouncedSave = useRef<NodeJS.Timeout | null>(null);
+  const triggerAutoSave = () => {
+    if (debouncedSave.current) {
+      clearTimeout(debouncedSave.current);
+    }
+    debouncedSave.current = setTimeout(async () => {
+      try {
+        await saveCurrentFormat();
+        console.log('Measurement results auto-saved');
+      } catch (error) {
+        console.error('Error auto-saving measurement results:', error);
+      }
+    }, 1000);
   };
 
-  // Save ambient measurement data
   const saveAmbientMeasurementData = (direction: string, field: string, value: string) => {
-    const key = getAmbientDataKey(selectedPoint, selectedSchedule, direction);
-    setMeasurementData(prev => ({
-      ...prev,
-      [key]: {
-        ...prev[key],
-        [field]: value,
-      }
-    }));
+    if (!selectedPoint || !selectedSchedule || !currentFormat) return;
+    
+    const pointId = currentFormat.measurementPoints[parseInt(selectedPoint)]?.id;
+    if (!pointId) return;
+
+    const result = getMeasurementResult(pointId, selectedSchedule as 'diurnal' | 'nocturnal', 'ambient');
+    
+    let ambientData = result?.ambient || {
+      levelN: '',
+      fileNumberN: '',
+      levelS: '',
+      fileNumberS: '',
+      levelE: '',
+      fileNumberE: '',
+      levelW: '',
+      fileNumberW: '',
+      levelV: '',
+      fileNumberV: '',
+      initialTime: '',
+      finalTime: '',
+    };
+
+    // Update the specific field
+    if (field === 'soundLevel') {
+      const directionKey = `level${direction}` as keyof typeof ambientData;
+      (ambientData as any)[directionKey] = value;
+    } else if (field === 'fileNumber') {
+      const fileKey = `fileNumber${direction}` as keyof typeof ambientData;
+      (ambientData as any)[fileKey] = value;
+    } else if (field === 'startTime') {
+      ambientData.initialTime = value;
+    } else if (field === 'endTime') {
+      ambientData.finalTime = value;
+    }
+
+    updateMeasurementResultData(pointId, selectedSchedule as 'diurnal' | 'nocturnal', 'ambient', ambientData);
+    triggerAutoSave();
   };
 
   const renderImmissionForm = () => {
@@ -575,6 +767,7 @@ const MeasurementResultsScreen: React.FC = () => {
           label="LAeq (dBA)"
           value={measurement.soundLevelLeq}
           onChangeText={(text) => saveImmissionMeasurementData('soundLevelLeq', text)}
+          onBlur={() => triggerAutoSave()}
           keyboardType="numeric"
           placeholder="0.0"
           horizontal
@@ -584,6 +777,7 @@ const MeasurementResultsScreen: React.FC = () => {
           label="LAmin (dBA)"
           value={measurement.soundLevelMin}
           onChangeText={(text) => saveImmissionMeasurementData('soundLevelMin', text)}
+          onBlur={() => triggerAutoSave()}
           keyboardType="numeric"
           placeholder="0.0"
           horizontal
@@ -593,6 +787,7 @@ const MeasurementResultsScreen: React.FC = () => {
           label="LAmax (dBA)"
           value={measurement.soundLevelMax}
           onChangeText={(text) => saveImmissionMeasurementData('soundLevelMax', text)}
+          onBlur={() => triggerAutoSave()}
           keyboardType="numeric"
           placeholder="0.0"
           horizontal
@@ -602,12 +797,13 @@ const MeasurementResultsScreen: React.FC = () => {
           label="# archivo"
           value={measurement.fileNumber}
           onChangeText={(text) => saveImmissionMeasurementData('fileNumber', text)}
+          onBlur={() => triggerAutoSave()}
           keyboardType="numeric"
           placeholder="000"
           horizontal
         />
         
-        <NativeTimePicker
+        <TimePicker
           label="Hora inicial"
           value={measurement.startTime}
           onTimeChange={(time) => {
@@ -650,7 +846,7 @@ const MeasurementResultsScreen: React.FC = () => {
           horizontal
         />
         
-        <NativeTimePicker
+        <TimePicker
           label="Hora final"
           value={measurement.endTime}
           onTimeChange={(time) => saveImmissionMeasurementData('endTime', time)}
@@ -661,6 +857,7 @@ const MeasurementResultsScreen: React.FC = () => {
           label="Cal PRE (dB)"
           value={measurement.calibrationPre}
           onChangeText={(text) => saveImmissionMeasurementData('calibrationPre', text)}
+          onBlur={() => triggerAutoSave()}
           keyboardType="numeric"
           placeholder=""
           horizontal
@@ -670,6 +867,7 @@ const MeasurementResultsScreen: React.FC = () => {
           label="Cal POST (dB)"
           value={measurement.calibrationPost}
           onChangeText={(text) => saveImmissionMeasurementData('calibrationPost', text)}
+          onBlur={() => triggerAutoSave()}
           keyboardType="numeric"
           placeholder=""
           horizontal
@@ -680,34 +878,79 @@ const MeasurementResultsScreen: React.FC = () => {
 
   // Get immission measurement data for current selection
   const getCurrentImmissionMeasurement = () => {
-    const key = getImmissionDataKey(selectedPoint, selectedSchedule);
-    return measurementData[key] || {
-      soundLevelLeq: '',
-      soundLevelMin: '',
-      soundLevelMax: '',
+    if (!selectedPoint || !selectedSchedule || !currentFormat) {
+      return {
+        soundLevelLeq: '',
+        soundLevelMin: '',
+        soundLevelMax: '',
+        fileNumber: '',
+        startTime: '',
+        endTime: '',
+        calibrationPre: '',
+        calibrationPost: '',
+      };
+    }
+
+    const pointId = currentFormat.measurementPoints[parseInt(selectedPoint)]?.id;
+    const result = getMeasurementResult(pointId, selectedSchedule as 'diurnal' | 'nocturnal', 'immission');
+    
+    if (!result?.immission) {
+      return {
+        soundLevelLeq: '',
+        soundLevelMin: '',
+        soundLevelMax: '',
+        fileNumber: '',
+        startTime: '',
+        endTime: '',
+        calibrationPre: '',
+        calibrationPost: '',
+      };
+    }
+
+    return {
+      soundLevelLeq: result.immission.levelLeq || '',
+      soundLevelMin: result.immission.levelLmin || '',
+      soundLevelMax: result.immission.levelLmax || '',
       fileNumber: '',
-      startTime: '',
-      endTime: '',
+      startTime: result.immission.initialTime || '',
+      endTime: result.immission.finalTime || '',
       calibrationPre: '',
       calibrationPost: '',
     };
   };
 
-  // Generate unique key for storing immission measurement data
-  const getImmissionDataKey = (pointIndex: string, schedule: string) => {
-    return `${pointIndex}_${schedule}_immission`;
-  };
-
   // Save immission measurement data
   const saveImmissionMeasurementData = (field: string, value: string) => {
-    const key = getImmissionDataKey(selectedPoint, selectedSchedule);
-    setMeasurementData(prev => ({
-      ...prev,
-      [key]: {
-        ...prev[key],
-        [field]: value,
-      }
-    }));
+    if (!selectedPoint || !selectedSchedule || !currentFormat) return;
+    
+    const pointId = currentFormat.measurementPoints[parseInt(selectedPoint)]?.id;
+    if (!pointId) return;
+
+    const result = getMeasurementResult(pointId, selectedSchedule as 'diurnal' | 'nocturnal', 'immission');
+    
+    let immissionData = result?.immission || {
+      levelLeq: '',
+      levelLmax: '',
+      levelLmin: '',
+      initialTime: '',
+      finalTime: '',
+    };
+
+    // Update the specific field
+    if (field === 'soundLevelLeq') {
+      immissionData.levelLeq = value;
+    } else if (field === 'soundLevelMin') {
+      immissionData.levelLmin = value;
+    } else if (field === 'soundLevelMax') {
+      immissionData.levelLmax = value;
+    } else if (field === 'startTime') {
+      immissionData.initialTime = value;
+    } else if (field === 'endTime') {
+      immissionData.finalTime = value;
+    }
+
+    updateMeasurementResultData(pointId, selectedSchedule as 'diurnal' | 'nocturnal', 'immission', immissionData);
+    triggerAutoSave();
   };
 
   const renderSonometryForm = () => {
@@ -733,6 +976,7 @@ const MeasurementResultsScreen: React.FC = () => {
           label="LAeq (dBA)"
           value={measurement.soundLevelLeq}
           onChangeText={(text) => saveSonometryMeasurementData('soundLevelLeq', text)}
+          onBlur={() => triggerAutoSave()}
           keyboardType="numeric"
           placeholder="0.0"
           horizontal
@@ -742,19 +986,20 @@ const MeasurementResultsScreen: React.FC = () => {
           label="# archivo"
           value={measurement.fileNumber}
           onChangeText={(text) => saveSonometryMeasurementData('fileNumber', text)}
+          onBlur={() => triggerAutoSave()}
           keyboardType="numeric"
           placeholder="000"
           horizontal
         />
         
-        <NativeTimePicker
+        <TimePicker
           label="Hora inicial"
           value={measurement.startTime}
           onTimeChange={(time) => saveSonometryMeasurementData('startTime', time)}
           horizontal
         />
         
-        <NativeTimePicker
+        <TimePicker
           label="Hora final"
           value={measurement.endTime}
           onTimeChange={(time) => saveSonometryMeasurementData('endTime', time)}
@@ -765,6 +1010,7 @@ const MeasurementResultsScreen: React.FC = () => {
           label="Cal PRE (dB)"
           value={measurement.calibrationPre}
           onChangeText={(text) => saveSonometryMeasurementData('calibrationPre', text)}
+          onBlur={() => triggerAutoSave()}
           keyboardType="numeric"
           placeholder=""
           horizontal
@@ -774,6 +1020,7 @@ const MeasurementResultsScreen: React.FC = () => {
           label="Cal POST (dB)"
           value={measurement.calibrationPost}
           onChangeText={(text) => saveSonometryMeasurementData('calibrationPost', text)}
+          onBlur={() => triggerAutoSave()}
           keyboardType="numeric"
           placeholder=""
           horizontal
@@ -784,32 +1031,69 @@ const MeasurementResultsScreen: React.FC = () => {
 
   // Get sonometry measurement data for current selection
   const getCurrentSonometryMeasurement = () => {
-    const key = getSonometryDataKey(selectedPoint, selectedSchedule);
-    return measurementData[key] || {
-      soundLevelLeq: '',
+    if (!selectedPoint || !selectedSchedule || !currentFormat) {
+      return {
+        soundLevelLeq: '',
+        fileNumber: '',
+        startTime: '',
+        endTime: '',
+        calibrationPre: '',
+        calibrationPost: '',
+      };
+    }
+
+    const pointId = currentFormat.measurementPoints[parseInt(selectedPoint)]?.id;
+    const result = getMeasurementResult(pointId, selectedSchedule as 'diurnal' | 'nocturnal', 'sonometry');
+    
+    if (!result?.sonometry) {
+      return {
+        soundLevelLeq: '',
+        fileNumber: '',
+        startTime: '',
+        endTime: '',
+        calibrationPre: '',
+        calibrationPost: '',
+      };
+    }
+
+    return {
+      soundLevelLeq: result.sonometry.levelLeq || '',
       fileNumber: '',
-      startTime: '',
-      endTime: '',
+      startTime: result.sonometry.initialTime || '',
+      endTime: result.sonometry.finalTime || '',
       calibrationPre: '',
       calibrationPost: '',
     };
   };
 
-  // Generate unique key for storing sonometry measurement data
-  const getSonometryDataKey = (pointIndex: string, schedule: string) => {
-    return `${pointIndex}_${schedule}_sonometry`;
-  };
-
   // Save sonometry measurement data
   const saveSonometryMeasurementData = (field: string, value: string) => {
-    const key = getSonometryDataKey(selectedPoint, selectedSchedule);
-    setMeasurementData(prev => ({
-      ...prev,
-      [key]: {
-        ...prev[key],
-        [field]: value,
-      }
-    }));
+    if (!selectedPoint || !selectedSchedule || !currentFormat) return;
+    
+    const pointId = currentFormat.measurementPoints[parseInt(selectedPoint)]?.id;
+    if (!pointId) return;
+
+    const result = getMeasurementResult(pointId, selectedSchedule as 'diurnal' | 'nocturnal', 'sonometry');
+    
+    let sonometryData = result?.sonometry || {
+      levelLeq: '',
+      levelLmax: '',
+      levelLmin: '',
+      initialTime: '',
+      finalTime: '',
+    };
+
+    // Update the specific field
+    if (field === 'soundLevelLeq') {
+      sonometryData.levelLeq = value;
+    } else if (field === 'startTime') {
+      sonometryData.initialTime = value;
+    } else if (field === 'endTime') {
+      sonometryData.finalTime = value;
+    }
+
+    updateMeasurementResultData(pointId, selectedSchedule as 'diurnal' | 'nocturnal', 'sonometry', sonometryData);
+    triggerAutoSave();
   };
 
     const renderCurrentIntervalFields = (prefix: string, intervalIndex: number) => {
@@ -823,6 +1107,7 @@ const MeasurementResultsScreen: React.FC = () => {
             label="LAeq (dBA)"
             value={measurement.soundLevel}
             onChangeText={(text) => saveMeasurementData(prefix, intervalIndex, 'soundLevel', text)}
+            onBlur={() => triggerAutoSave()}
             keyboardType="numeric"
             placeholder="0.0"
             horizontal
@@ -832,6 +1117,7 @@ const MeasurementResultsScreen: React.FC = () => {
             label="L90 (dBA)"
             value={measurement.percentile90}
             onChangeText={(text) => saveMeasurementData(prefix, intervalIndex, 'percentile90', text)}
+            onBlur={() => triggerAutoSave()}
             keyboardType="numeric"
             placeholder="0.0"
             horizontal
@@ -841,12 +1127,13 @@ const MeasurementResultsScreen: React.FC = () => {
             label="# archivo"
             value={measurement.fileNumber}
             onChangeText={(text) => saveMeasurementData(prefix, intervalIndex, 'fileNumber', text)}
+            onBlur={() => triggerAutoSave()}
             keyboardType="numeric"
             placeholder="000"
             horizontal
           />
           
-          <NativeTimePicker
+          <TimePicker
             label="Hora inicial"
             value={measurement.startTime}
             onTimeChange={(time) => {
@@ -865,7 +1152,7 @@ const MeasurementResultsScreen: React.FC = () => {
             horizontal
           />
           
-          <NativeTimePicker
+          <TimePicker
             label="Hora final"
             value={measurement.endTime}
             onTimeChange={(time) => saveMeasurementData(prefix, intervalIndex, 'endTime', time)}
@@ -876,6 +1163,7 @@ const MeasurementResultsScreen: React.FC = () => {
             label="Cal PRE (dB)"
             value={measurement.calibrationPre}
             onChangeText={(text) => saveMeasurementData(prefix, intervalIndex, 'calibrationPre', text)}
+            onBlur={() => triggerAutoSave()}
             keyboardType="numeric"
             placeholder=""
             horizontal
@@ -885,6 +1173,7 @@ const MeasurementResultsScreen: React.FC = () => {
             label="Cal POST (dB)"
             value={measurement.calibrationPost}
             onChangeText={(text) => saveMeasurementData(prefix, intervalIndex, 'calibrationPost', text)}
+            onBlur={() => triggerAutoSave()}
             keyboardType="numeric"
             placeholder=""
             horizontal
@@ -985,20 +1274,20 @@ const styles = StyleSheet.create({
   selectionSection: {
     backgroundColor: COLORS.surface,
     borderRadius: 12,
-    padding: 12,
+    padding: 10,
     marginTop: 6,
     borderWidth: 1,
     borderColor: COLORS.border,
   },
   sectionHeader: {
-    marginBottom: 6,
+    marginBottom: 4,
     marginTop: 2,
   },
   sectionTitle: {
     fontSize: 14,
     fontWeight: '600',
     color: COLORS.text,
-    marginBottom: 6,
+    marginBottom: 4,
   },
   formContainer: {
     backgroundColor: COLORS.surface,
@@ -1041,9 +1330,9 @@ const styles = StyleSheet.create({
   pointButton: {
     backgroundColor: COLORS.surface,
     borderWidth: 2,
-    borderRadius: 24,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
     marginHorizontal: 6,
     minWidth: 80,
     alignItems: 'center',
@@ -1055,7 +1344,7 @@ const styles = StyleSheet.create({
   scheduleButtonsContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 12,
+    gap: 10,
     marginBottom: 2,
   },
   scheduleButton: {

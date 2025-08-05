@@ -1,21 +1,78 @@
 import React from 'react';
-import { View, Text, StyleSheet, SafeAreaView, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, SafeAreaView, ScrollView, Alert } from 'react-native';
 import { useMeasurement } from '../context/MeasurementContext';
 import FormCheckbox from '../components/FormCheckbox';
+import FormButton from '../components/FormButton';
 import { COLORS } from '../constants';
 
-const InspectionScreen: React.FC = () => {
-  const { state, updateInspectionData } = useMeasurement();
+interface InspectionScreenProps {
+  onContinue?: () => void;
+}
 
-  const handleCheckboxChange = (field: string, value: boolean) => {
+const InspectionScreen: React.FC<InspectionScreenProps> = ({ onContinue }) => {
+  const { state, updateInspectionData, saveCurrentFormat } = useMeasurement();
+
+  const handleCheckboxChange = async (field: string, value: boolean) => {
     if (!state.currentFormat) return;
     
-    const updatedInspection = {
-      ...state.currentFormat.inspection,
-      [field]: value,
-    };
+    try {
+      const updatedInspection = {
+        ...state.currentFormat.inspection,
+        [field]: value,
+      };
+      
+      updateInspectionData(updatedInspection);
+      
+      // Pequeño delay para permitir que el estado se actualice
+      setTimeout(async () => {
+        try {
+          await saveCurrentFormat();
+          console.log('Inspection data saved successfully');
+        } catch (error) {
+          console.error('Error saving inspection data:', error);
+        }
+      }, 100);
+    } catch (error) {
+      console.error('Error updating inspection data:', error);
+    }
+  };
+
+  const areAllInspectionFieldsTrue = () => {
+    const inspection = state.currentFormat?.inspection;
+    if (!inspection) return false;
     
-    updateInspectionData(updatedInspection);
+    return (
+      inspection.pointAssignment &&
+      inspection.calibrationVerification &&
+      inspection.parametersVerification &&
+      inspection.batteryStatus &&
+      inspection.timeSynchronization &&
+      inspection.weatherStationTests &&
+      inspection.weatherConditionsRecord
+    );
+  };
+
+  const handleContinue = async () => {
+    if (!state.currentFormat) return;
+    
+    try {
+      await saveCurrentFormat();
+      
+      if (areAllInspectionFieldsTrue()) {
+        if (onContinue) {
+          onContinue();
+        }
+      } else {
+        Alert.alert(
+          'Inspección Incompleta',
+          'Realizar cada revisión de la inspección previa',
+          [{ text: 'Entendido', style: 'default' }]
+        );
+      }
+    } catch (error) {
+      console.error('Error saving inspection data:', error);
+      Alert.alert('Error', 'No se pudo guardar la información de inspección');
+    }
   };
 
   const inspectionItems = [
@@ -93,6 +150,13 @@ const InspectionScreen: React.FC = () => {
               Complete todas las verificaciones antes de proceder con las mediciones
             </Text>
           </View>
+
+          <FormButton
+            title="Continuar"
+            onPress={handleContinue}
+            size="large"
+            style={styles.continueButton}
+          />
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -115,11 +179,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   title: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: 'bold',
-    color: COLORS.primary,
+    color: COLORS.text,
     marginBottom: 8,
-    textAlign: 'center',
   },
   subtitle: {
     fontSize: 16,
@@ -158,6 +221,10 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     lineHeight: 20,
     fontStyle: 'italic',
+  },
+  continueButton: {
+    marginTop: 24,
+    marginBottom: 32,
   },
 });
 

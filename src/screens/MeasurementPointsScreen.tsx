@@ -19,7 +19,7 @@ const validationSchema = Yup.object({
 });
 
 const MeasurementPointsScreen: React.FC = () => {
-  const { state, addMeasurementPoint, deleteMeasurementPoint, updateMeasurementPoint } = useMeasurement();
+  const { state, addMeasurementPoint, deleteMeasurementPoint, updateMeasurementPoint, saveCurrentFormat } = useMeasurement();
   const [showAddForm, setShowAddForm] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const [editingPoint, setEditingPoint] = useState<MeasurementPoint | null>(null);
@@ -56,8 +56,8 @@ const MeasurementPointsScreen: React.FC = () => {
         };
 
         updateMeasurementPoint(editingPoint.id, updatedPoint);
+        await saveCurrentFormat();
         setEditingPoint(null);
-        Alert.alert('Éxito', 'Punto de medición actualizado correctamente');
       } else {
         // Agregar nuevo punto
         const newPoint: MeasurementPoint = {
@@ -68,8 +68,8 @@ const MeasurementPointsScreen: React.FC = () => {
         };
 
         addMeasurementPoint(newPoint);
+        await saveCurrentFormat();
         setShowAddForm(false);
-        Alert.alert('Éxito', 'Punto de medición agregado correctamente');
       }
     } catch (error) {
       Alert.alert('Error', editingPoint ? 'No se pudo actualizar el punto de medición' : 'No se pudo agregar el punto de medición');
@@ -90,7 +90,10 @@ const MeasurementPointsScreen: React.FC = () => {
         {
           text: 'Eliminar',
           style: 'destructive',
-          onPress: () => deleteMeasurementPoint(point.id),
+          onPress: async () => {
+            deleteMeasurementPoint(point.id);
+            await saveCurrentFormat();
+          },
         },
       ]
     );

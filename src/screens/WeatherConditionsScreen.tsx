@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity } from 'react-native';
 import { Formik } from 'formik';
 import * as Yup from 'yup';
@@ -81,7 +81,7 @@ const validationSchema = Yup.object({
 });
 
 const WeatherConditionsScreen: React.FC = () => {
-  const { state, updateWeatherConditions } = useMeasurement();
+  const { state, updateWeatherConditions, saveCurrentFormat } = useMeasurement();
   const [isSaving, setIsSaving] = useState(false);
   const [selectedSchedule, setSelectedSchedule] = useState('diurnal');
 
@@ -137,16 +137,13 @@ const WeatherConditionsScreen: React.FC = () => {
     };
   };
 
-  const handleSave = async (values: any) => {
+  const handleAutoSave = async (values: any) => {
     try {
-      setIsSaving(true);
       const convertedValues = convertToNumbers(values);
       updateWeatherConditions(convertedValues);
-      Alert.alert('Éxito', 'Condiciones meteorológicas guardadas correctamente');
+      await saveCurrentFormat();
     } catch (error) {
-      Alert.alert('Error', 'No se pudieron guardar las condiciones meteorológicas');
-    } finally {
-      setIsSaving(false);
+      console.error('Error auto-saving weather conditions:', error);
     }
   };
 
@@ -199,7 +196,8 @@ const WeatherConditionsScreen: React.FC = () => {
     values: any,
     errors: any,
     touched: any,
-    handleChange: any
+    handleChange: any,
+    handleAutoSave: any
   ) => (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>{title}</Text>
@@ -210,6 +208,7 @@ const WeatherConditionsScreen: React.FC = () => {
             label="Velocidad del viento inicial (m/s)"
             value={getDisplayValue(values[prefix].windSpeed.initial)}
             onChangeText={handleChange(`${prefix}.windSpeed.initial`)}
+            onBlur={() => handleAutoSave(values)}
             error={touched[prefix]?.windSpeed?.initial && errors[prefix]?.windSpeed?.initial}
             keyboardType="numeric"
           />
@@ -219,6 +218,7 @@ const WeatherConditionsScreen: React.FC = () => {
             label="Velocidad del viento final (m/s)"
             value={getDisplayValue(values[prefix].windSpeed.final)}
             onChangeText={handleChange(`${prefix}.windSpeed.final`)}
+            onBlur={() => handleAutoSave(values)}
             error={touched[prefix]?.windSpeed?.final && errors[prefix]?.windSpeed?.final}
             keyboardType="numeric"
           />
@@ -231,6 +231,7 @@ const WeatherConditionsScreen: React.FC = () => {
             label="Dirección del viento inicial"
             value={values[prefix].windDirection.initial}
             onChangeText={handleChange(`${prefix}.windDirection.initial`)}
+            onBlur={() => handleAutoSave(values)}
             error={touched[prefix]?.windDirection?.initial && errors[prefix]?.windDirection?.initial}
             placeholder="Ej: N, NE, E, SE, S, SW, W, NW"
           />
@@ -240,6 +241,7 @@ const WeatherConditionsScreen: React.FC = () => {
             label="Dirección del viento final"
             value={values[prefix].windDirection.final}
             onChangeText={handleChange(`${prefix}.windDirection.final`)}
+            onBlur={() => handleAutoSave(values)}
             error={touched[prefix]?.windDirection?.final && errors[prefix]?.windDirection?.final}
             placeholder="Ej: N, NE, E, SE, S, SW, W, NW"
           />
@@ -252,6 +254,7 @@ const WeatherConditionsScreen: React.FC = () => {
             label="Temperatura inicial (°C)"
             value={getDisplayValue(values[prefix].temperature.initial)}
             onChangeText={handleChange(`${prefix}.temperature.initial`)}
+            onBlur={() => handleAutoSave(values)}
             error={touched[prefix]?.temperature?.initial && errors[prefix]?.temperature?.initial}
             keyboardType="numeric"
           />
@@ -261,6 +264,7 @@ const WeatherConditionsScreen: React.FC = () => {
             label="Temperatura final (°C)"
             value={getDisplayValue(values[prefix].temperature.final)}
             onChangeText={handleChange(`${prefix}.temperature.final`)}
+            onBlur={() => handleAutoSave(values)}
             error={touched[prefix]?.temperature?.final && errors[prefix]?.temperature?.final}
             keyboardType="numeric"
           />
@@ -273,6 +277,7 @@ const WeatherConditionsScreen: React.FC = () => {
             label="Humedad inicial (%)"
             value={getDisplayValue(values[prefix].humidity.initial)}
             onChangeText={handleChange(`${prefix}.humidity.initial`)}
+            onBlur={() => handleAutoSave(values)}
             error={touched[prefix]?.humidity?.initial && errors[prefix]?.humidity?.initial}
             keyboardType="numeric"
           />
@@ -282,6 +287,7 @@ const WeatherConditionsScreen: React.FC = () => {
             label="Humedad final (%)"
             value={getDisplayValue(values[prefix].humidity.final)}
             onChangeText={handleChange(`${prefix}.humidity.final`)}
+            onBlur={() => handleAutoSave(values)}
             error={touched[prefix]?.humidity?.final && errors[prefix]?.humidity?.final}
             keyboardType="numeric"
           />
@@ -294,6 +300,7 @@ const WeatherConditionsScreen: React.FC = () => {
             label="Presión atmosférica inicial (hPa)"
             value={getDisplayValue(values[prefix].atmosphericPressure.initial)}
             onChangeText={handleChange(`${prefix}.atmosphericPressure.initial`)}
+            onBlur={() => handleAutoSave(values)}
             error={touched[prefix]?.atmosphericPressure?.initial && errors[prefix]?.atmosphericPressure?.initial}
             keyboardType="numeric"
           />
@@ -303,6 +310,7 @@ const WeatherConditionsScreen: React.FC = () => {
             label="Presión atmosférica final (hPa)"
             value={getDisplayValue(values[prefix].atmosphericPressure.final)}
             onChangeText={handleChange(`${prefix}.atmosphericPressure.final`)}
+            onBlur={() => handleAutoSave(values)}
             error={touched[prefix]?.atmosphericPressure?.final && errors[prefix]?.atmosphericPressure?.final}
             keyboardType="numeric"
           />
@@ -315,6 +323,7 @@ const WeatherConditionsScreen: React.FC = () => {
             label="Precipitación inicial (mm)"
             value={getDisplayValue(values[prefix].precipitation.initial)}
             onChangeText={handleChange(`${prefix}.precipitation.initial`)}
+            onBlur={() => handleAutoSave(values)}
             error={touched[prefix]?.precipitation?.initial && errors[prefix]?.precipitation?.initial}
             keyboardType="numeric"
           />
@@ -324,6 +333,7 @@ const WeatherConditionsScreen: React.FC = () => {
             label="Precipitación final (mm)"
             value={getDisplayValue(values[prefix].precipitation.final)}
             onChangeText={handleChange(`${prefix}.precipitation.final`)}
+            onBlur={() => handleAutoSave(values)}
             error={touched[prefix]?.precipitation?.final && errors[prefix]?.precipitation?.final}
             keyboardType="numeric"
           />
@@ -370,10 +380,10 @@ const WeatherConditionsScreen: React.FC = () => {
             },
           }}
           validationSchema={validationSchema}
-          onSubmit={handleSave}
+          onSubmit={() => {}}
           enableReinitialize
         >
-          {({ values, errors, touched, handleChange, handleSubmit }) => (
+          {({ values, errors, touched, handleChange }) => (
             <View>
               {renderWeatherSection(
                 selectedSchedule === 'diurnal' ? 'Horario Diurno' : 'Horario Nocturno',
@@ -381,16 +391,9 @@ const WeatherConditionsScreen: React.FC = () => {
                 values,
                 errors,
                 touched,
-                handleChange
+                handleChange,
+                handleAutoSave
               )}
-
-              <FormButton
-                title={isSaving ? 'Guardando...' : 'Guardar Condiciones'}
-                onPress={handleSubmit}
-                loading={isSaving}
-                size="large"
-                style={styles.saveButton}
-              />
             </View>
           )}
         </Formik>

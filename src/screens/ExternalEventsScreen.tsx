@@ -6,7 +6,7 @@ import { Feather } from '@expo/vector-icons';
 import { useMeasurement } from '../context/MeasurementContext';
 import FormInput from '../components/FormInput';
 import FormButton from '../components/FormButton';
-import NativeTimePicker from '../components/NativeTimePicker';
+import TimePicker from '../components/TimePicker';
 import { COLORS } from '../constants';
 import { ExternalEvent } from '../types';
 
@@ -22,7 +22,7 @@ const validationSchema = Yup.object({
 });
 
 const ExternalEventsScreen: React.FC = () => {
-  const { state, addExternalEvent, deleteExternalEvent, updateExternalEvent } = useMeasurement();
+  const { state, addExternalEvent, deleteExternalEvent, saveCurrentFormat } = useMeasurement();
   const [showAddForm, setShowAddForm] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const [editingEvent, setEditingEvent] = useState<ExternalEvent | null>(null);
@@ -51,20 +51,20 @@ const ExternalEventsScreen: React.FC = () => {
     try {
       setIsAdding(true);
       
-      if (editingEvent) {
-        // Editar evento existente
-        const updatedEvent: ExternalEvent = {
-          ...editingEvent,
-          name: values.name,
-          level: parseFloat(values.level) || 0,
-          time: values.time,
-          duration: parseFloat(values.duration) || 0,
-        };
-
-        updateExternalEvent(editingEvent.id, updatedEvent);
-        setEditingEvent(null);
-        Alert.alert('Éxito', 'Evento externo actualizado correctamente');
-      } else {
+      // TODO: Implementar funcionalidad de edición cuando sea necesario
+      // if (editingEvent) {
+      //   // Editar evento existente
+      //   const updatedEvent: ExternalEvent = {
+      //     ...editingEvent,
+      //     name: values.name,
+      //     level: parseFloat(values.level) || 0,
+      //     time: values.time,
+      //     duration: parseFloat(values.duration) || 0,
+      //   };
+      //   updateExternalEvent(editingEvent.id, updatedEvent);
+      //   setEditingEvent(null);
+      //   Alert.alert('Éxito', 'Evento externo actualizado correctamente');
+      // } else {
         // Agregar nuevo evento
         const newEvent: ExternalEvent = {
           id: Date.now().toString(),
@@ -75,9 +75,9 @@ const ExternalEventsScreen: React.FC = () => {
         };
 
         addExternalEvent(newEvent);
+        await saveCurrentFormat();
         setShowAddForm(false);
-        Alert.alert('Éxito', 'Evento externo agregado correctamente');
-      }
+      // }
     } catch (error) {
       Alert.alert('Error', editingEvent ? 'No se pudo actualizar el evento externo' : 'No se pudo agregar el evento externo');
     } finally {
@@ -97,7 +97,10 @@ const ExternalEventsScreen: React.FC = () => {
         {
           text: 'Eliminar',
           style: 'destructive',
-          onPress: () => deleteExternalEvent(event.id),
+          onPress: async () => {
+            deleteExternalEvent(event.id);
+            await saveCurrentFormat();
+          },
         },
       ]
     );
@@ -231,10 +234,11 @@ const ExternalEventsScreen: React.FC = () => {
                     required
                   />
 
-                  <NativeTimePicker
+                  <TimePicker
                     label="Hora del evento"
                     value={values.time}
                     onTimeChange={(time) => setFieldValue('time', time)}
+                    vertical={true}
                     required
                   />
 

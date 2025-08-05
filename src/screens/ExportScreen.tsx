@@ -71,10 +71,25 @@ const ExportScreen: React.FC = () => {
       throw new Error('No hay fotos para exportar');
     }
 
+    // Check available storage space before starting
+    const diskInfo = await FileSystem.getFreeDiskStorageAsync();
+    const approximateSize = state.currentFormat.photos.length * 2 * 1024 * 1024; // Assume 2MB per photo
+    
+    if (diskInfo < approximateSize * 2) { // Need 2x space for processing
+      throw new Error('No hay suficiente espacio de almacenamiento para exportar las fotos');
+    }
+
     const baseName = generateFileName(state.currentFormat, 'fotos');
     const zipPath = `${FileSystem.documentDirectory}${baseName}.zip`;
     
-    // Preparar fotos para ZIP
+    // Clean up any existing ZIP file
+    try {
+      await FileSystem.deleteAsync(zipPath, { idempotent: true });
+    } catch (error) {
+      console.warn('Could not delete existing ZIP file:', error);
+    }
+    
+    // Preparar fotos para ZIP con validación
     const photosForZip: Array<{ uri: string; pointName: string; schedule: string; index: number; timestamp: string }> = [];
     
     // Organizar fotos por punto y horario
@@ -85,24 +100,40 @@ const ExportScreen: React.FC = () => {
       return acc;
     }, {} as Record<string, typeof state.currentFormat.photos>);
 
-    // Preparar array para ZIP
-    Object.entries(photosByPointSchedule).forEach(([key, photos]) => {
+    // Preparar array para ZIP con validación de archivos
+    for (const [key, photos] of Object.entries(photosByPointSchedule)) {
       const [pointId, schedule] = key.split('_');
       const point = state.currentFormat!.measurementPoints.find(p => p.id === pointId);
       const pointName = point?.name || `Punto_${pointId}`;
       
-      photos.forEach((photo, index) => {
-        photosForZip.push({
-          uri: photo.uri,
-          pointName,
-          schedule,
-          index,
-          timestamp: photo.timestamp,
-        });
-      });
-    });
+      for (let index = 0; index < photos.length; index++) {
+        const photo = photos[index];
+        
+        // Validate photo file exists before adding to queue
+        try {
+          const photoInfo = await FileSystem.getInfoAsync(photo.uri);
+          if (photoInfo.exists && photoInfo.size && photoInfo.size > 0) {
+            photosForZip.push({
+              uri: photo.uri,
+              pointName,
+              schedule,
+              index,
+              timestamp: photo.timestamp,
+            });
+          } else {
+            console.warn(`Skipping invalid photo: ${photo.uri}`);
+          }
+        } catch (error) {
+          console.warn(`Error validating photo ${photo.uri}:`, error);
+        }
+      }
+    }
 
-    // Crear ZIP con progreso
+    if (photosForZip.length === 0) {
+      throw new Error('No se encontraron fotos válidas para exportar');
+    }
+
+    // Crear ZIP con progreso y manejo de memoria mejorado
     await createPhotosZip(photosForZip, zipPath, (progress) => {
       setZipProgress(progress * 100);
     });
@@ -113,21 +144,37 @@ const ExportScreen: React.FC = () => {
   const exportAll = async (): Promise<string> => {
     if (!state.currentFormat) throw new Error('No hay formato activo');
 
+    // Check available storage space before starting
+    const approximatePhotoSize = state.currentFormat.photos.length * 2 * 1024 * 1024; // 2MB per photo
+    const approximateTotalSize = approximatePhotoSize + (1024 * 1024); // Add 1MB for JSON and overhead
+    
+    const diskInfo = await FileSystem.getFreeDiskStorageAsync();
+    if (diskInfo < approximateTotalSize * 2) { // Need 2x space for processing
+      throw new Error('No hay suficiente espacio de almacenamiento para la exportación completa');
+    }
+
     const baseName = generateFileName(state.currentFormat, 'completo');
     const zipPath = `${FileSystem.documentDirectory}${baseName}.zip`;
+    
+    // Clean up any existing ZIP file
+    try {
+      await FileSystem.deleteAsync(zipPath, { idempotent: true });
+    } catch (error) {
+      console.warn('Could not delete existing ZIP file:', error);
+    }
     
     const filesToZip: FileToZip[] = [];
 
     // 1. Crear archivo JSON temporal
     const jsonContent = JSON.stringify(state.currentFormat, null, 2);
-    const tempJsonPath = `${FileSystem.documentDirectory}temp_formato.json`;
+    const tempJsonPath = `${FileSystem.documentDirectory}temp_formato_complete.json`;
     await FileSystem.writeAsStringAsync(tempJsonPath, jsonContent);
     filesToZip.push({
       path: tempJsonPath,
       name: 'formato_campo.json',
     });
 
-    // 2. Agregar fotos organizadas por carpetas
+    // 2. Agregar fotos organizadas por carpetas con validación
     if (state.currentFormat.photos.length > 0) {
       // Organizar fotos por punto y horario
       const photosByPointSchedule = state.currentFormat.photos.reduce((acc, photo) => {
@@ -137,23 +184,37 @@ const ExportScreen: React.FC = () => {
         return acc;
       }, {} as Record<string, typeof state.currentFormat.photos>);
 
-      // Agregar cada foto al ZIP con su ruta de carpeta
-      Object.entries(photosByPointSchedule).forEach(([key, photos]) => {
+      // Agregar cada foto al ZIP con validación
+      for (const [key, photos] of Object.entries(photosByPointSchedule)) {
         const [pointId, schedule] = key.split('_');
         const point = state.currentFormat!.measurementPoints.find(p => p.id === pointId);
         const pointName = point?.name || `Punto_${pointId}`;
         const scheduleName = schedule === 'diurnal' ? 'Diurno' : 'Nocturno';
         const folderName = `fotos/${pointName}_${scheduleName}`;
         
-        photos.forEach((photo, index) => {
-          const fileName = `foto_${index + 1}_${new Date(photo.timestamp).getTime()}.jpg`;
-          filesToZip.push({
-            path: photo.uri,
-            name: `${folderName}/${fileName}`,
-          });
-        });
-      });
+        for (let index = 0; index < photos.length; index++) {
+          const photo = photos[index];
+          
+          try {
+            // Validate photo file exists and has valid size
+            const photoInfo = await FileSystem.getInfoAsync(photo.uri);
+            if (photoInfo.exists && photoInfo.size && photoInfo.size > 0) {
+              const fileName = `foto_${index + 1}_${new Date(photo.timestamp).getTime()}.jpg`;
+              filesToZip.push({
+                path: photo.uri,
+                name: `${folderName}/${fileName}`,
+              });
+            } else {
+              console.warn(`Skipping invalid photo in complete export: ${photo.uri}`);
+            }
+          } catch (error) {
+            console.warn(`Error validating photo in complete export ${photo.uri}:`, error);
+          }
+        }
+      }
     }
+
+    const validPhotosCount = filesToZip.length - 1; // Subtract 1 for JSON file
 
     // 3. Crear archivo de información
     const infoContent = `Exportación Completa - ${state.currentFormat.generalInfo.company}
@@ -163,13 +224,14 @@ Orden de Trabajo: ${state.currentFormat.generalInfo.workOrder.type}-${state.curr
 Archivos incluidos:
 - formato_campo.json: Datos completos del formulario
 - fotos/: Carpeta con fotos organizadas por punto y horario
-- Total de fotos: ${state.currentFormat.photos.length}
+- Total de fotos válidas: ${validPhotosCount}
+${state.currentFormat.photos.length !== validPhotosCount ? `- Fotos originales: ${state.currentFormat.photos.length}` : ''}
 
 Estructura de carpetas por punto y horario de medición.
 Generado: ${new Date().toLocaleString('es-ES')}
 `;
     
-    const tempInfoPath = `${FileSystem.documentDirectory}temp_info.txt`;
+    const tempInfoPath = `${FileSystem.documentDirectory}temp_info_complete.txt`;
     await FileSystem.writeAsStringAsync(tempInfoPath, infoContent);
     filesToZip.push({
       path: tempInfoPath,
@@ -182,8 +244,12 @@ Generado: ${new Date().toLocaleString('es-ES')}
     });
 
     // 5. Limpiar archivos temporales
-    await FileSystem.deleteAsync(tempJsonPath, { idempotent: true });
-    await FileSystem.deleteAsync(tempInfoPath, { idempotent: true });
+    try {
+      await FileSystem.deleteAsync(tempJsonPath, { idempotent: true });
+      await FileSystem.deleteAsync(tempInfoPath, { idempotent: true });
+    } catch (error) {
+      console.warn('Error cleaning up temporary files:', error);
+    }
     
     return zipPath;
   };
@@ -197,21 +263,34 @@ Generado: ${new Date().toLocaleString('es-ES')}
     setLoading(optionId);
     setZipProgress(0);
     
+    // Create timeout for export operations
+    const exportTimeout = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('La exportación tardó demasiado tiempo. Intente de nuevo.')), 5 * 60 * 1000); // 5 minutes
+    });
+    
     try {
       let fileToShare: string;
       
-      switch (optionId) {
-        case 'all':
-          fileToShare = await exportAll();
-          break;
-        case 'format':
-          fileToShare = await exportFormat();
-          break;
-        case 'photos':
-          fileToShare = await exportPhotos();
-          break;
-        default:
-          throw new Error('Opción de exportación no válida');
+      // Add timeout wrapper for export operations
+      const exportPromise = (async () => {
+        switch (optionId) {
+          case 'all':
+            return await exportAll();
+          case 'format':
+            return await exportFormat();
+          case 'photos':
+            return await exportPhotos();
+          default:
+            throw new Error('Opción de exportación no válida');
+        }
+      })();
+      
+      fileToShare = await Promise.race([exportPromise, exportTimeout]);
+
+      // Verify file was created successfully
+      const fileInfo = await FileSystem.getInfoAsync(fileToShare);
+      if (!fileInfo.exists) {
+        throw new Error('El archivo exportado no se creó correctamente');
       }
 
       // Compartir archivo
@@ -234,7 +313,31 @@ Generado: ${new Date().toLocaleString('es-ES')}
       
     } catch (error: any) {
       console.error('Error en exportación:', error);
-      Alert.alert('Error', error.message || 'No se pudo completar la exportación');
+      
+      let errorMessage = 'No se pudo completar la exportación';
+      
+      if (error.message) {
+        if (error.message.includes('timeout') || error.message.includes('tardó demasiado')) {
+          errorMessage = 'La exportación tardó demasiado tiempo. Si tiene muchas fotos, intente exportar solo el formato o reduzca el número de fotos.';
+        } else if (error.message.includes('memory') || error.message.includes('memoria')) {
+          errorMessage = 'No hay suficiente memoria para completar la exportación. Intente cerrar otras aplicaciones y vuelva a intentar.';
+        } else if (error.message.includes('space') || error.message.includes('espacio')) {
+          errorMessage = 'No hay suficiente espacio de almacenamiento. Libere espacio e intente nuevamente.';
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
+      Alert.alert('Error de Exportación', errorMessage, [
+        {
+          text: 'Reintentar',
+          onPress: () => handleExport(optionId),
+        },
+        {
+          text: 'Cancelar',
+          style: 'cancel',
+        }
+      ]);
     } finally {
       setLoading(null);
       setZipProgress(0);
@@ -322,7 +425,7 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   title: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: 'bold',
     color: COLORS.text,
     marginBottom: 8,

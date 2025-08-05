@@ -56,6 +56,7 @@ const createEmptyFormat = (): MeasurementFormat => ({
     weatherStation: {
       selected: 'ACU-26',
     },
+    scanningMethod: '',
   },
   inspection: {
     pointAssignment: false,
@@ -190,6 +191,43 @@ const measurementReducer = (state: AppState, action: AppAction): AppState => {
         },
       };
 
+    case 'UPDATE_MEASUREMENT_RESULT_DATA':
+      if (!state.currentFormat) return state;
+      const { pointId, schedule, type, data } = action.payload;
+      const existingResultIndex = state.currentFormat.measurementResults.findIndex(
+        result => result.pointId === pointId && result.schedule === schedule && result.type === type
+      );
+      
+      if (existingResultIndex !== -1) {
+        // Update existing result
+        return {
+          ...state,
+          currentFormat: {
+            ...state.currentFormat,
+            measurementResults: state.currentFormat.measurementResults.map((result, index) =>
+              index === existingResultIndex ? { ...result, [type]: data } : result
+            ),
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      } else {
+        // Create new result
+        const newResult: MeasurementResults = {
+          pointId,
+          schedule,
+          type,
+          [type]: data,
+        };
+        return {
+          ...state,
+          currentFormat: {
+            ...state.currentFormat,
+            measurementResults: [...state.currentFormat.measurementResults, newResult],
+            updatedAt: new Date().toISOString(),
+          },
+        };
+      }
+
     case 'UPDATE_QUALITATIVE_DATA':
       if (!state.currentFormat) return state;
       return {
@@ -315,6 +353,7 @@ interface MeasurementContextType {
   updateInspectionData: (data: InspectionData) => void;
   addMeasurementResult: (result: MeasurementResults) => void;
   updateMeasurementResult: (index: number, result: MeasurementResults) => void;
+  updateMeasurementResultData: (pointId: string, schedule: 'diurnal' | 'nocturnal', type: MeasurementType, data: any) => void;
   updateQualitativeData: (data: QualitativeData) => void;
   addExternalEvent: (event: ExternalEvent) => void;
   deleteExternalEvent: (id: string) => void;
@@ -397,6 +436,10 @@ export const MeasurementProvider: React.FC<{ children: ReactNode }> = ({ childre
     dispatch({ type: 'UPDATE_MEASUREMENT_RESULT', payload: { index, result } });
   };
 
+  const updateMeasurementResultData = (pointId: string, schedule: 'diurnal' | 'nocturnal', type: MeasurementType, data: any) => {
+    dispatch({ type: 'UPDATE_MEASUREMENT_RESULT_DATA', payload: { pointId, schedule, type, data } });
+  };
+
   const updateQualitativeData = (data: QualitativeData) => {
     dispatch({ type: 'UPDATE_QUALITATIVE_DATA', payload: data });
   };
@@ -420,25 +463,46 @@ export const MeasurementProvider: React.FC<{ children: ReactNode }> = ({ childre
   };
 
   const saveCurrentFormat = async () => {
-    if (!state.currentFormat) return;
+    if (!state.currentFormat) {
+      console.log('No current format to save');
+      return;
+    }
 
     try {
+      console.log('Saving current format:', state.currentFormat.id);
       dispatch({ type: 'SET_LOADING', payload: true });
-      dispatch({ type: 'SAVE_FORMAT', payload: state.currentFormat });
       
-      const updatedFormats = [...state.savedFormats];
-      const existingIndex = updatedFormats.findIndex(f => f.id === state.currentFormat.id);
+      // Primero obtener los formatos guardados actuales desde AsyncStorage
+      const savedFormatsJson = await AsyncStorage.getItem(STORAGE_KEYS.MEASUREMENT_FORMATS);
+      let savedFormats = [];
+      
+      if (savedFormatsJson) {
+        savedFormats = JSON.parse(savedFormatsJson);
+      }
+      
+      // Actualizar o agregar el formato actual
+      const existingIndex = savedFormats.findIndex((f: MeasurementFormat) => f.id === state.currentFormat.id);
       
       if (existingIndex !== -1) {
-        updatedFormats[existingIndex] = state.currentFormat;
+        savedFormats[existingIndex] = state.currentFormat;
+        console.log('Updated existing format at index:', existingIndex);
       } else {
-        updatedFormats.push(state.currentFormat);
+        savedFormats.push(state.currentFormat);
+        console.log('Added new format, total formats:', savedFormats.length);
       }
 
-      await AsyncStorage.setItem(STORAGE_KEYS.MEASUREMENT_FORMATS, JSON.stringify(updatedFormats));
+      // Guardar en AsyncStorage
+      await AsyncStorage.setItem(STORAGE_KEYS.MEASUREMENT_FORMATS, JSON.stringify(savedFormats));
       await AsyncStorage.setItem(STORAGE_KEYS.CURRENT_FORMAT, JSON.stringify(state.currentFormat));
+      
+      // Actualizar el estado local
+      dispatch({ type: 'SAVE_FORMAT', payload: state.currentFormat });
+      
+      console.log('Format saved successfully');
     } catch (error) {
+      console.error('Error saving format:', error);
       dispatch({ type: 'SET_ERROR', payload: 'Error al guardar el formato' });
+      throw error; // Re-throw para que las pantallas puedan manejarlo
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
     }
@@ -466,6 +530,9 @@ export const MeasurementProvider: React.FC<{ children: ReactNode }> = ({ childre
               weatherConditionsRecord: false,
             };
           }
+          if (!format.technicalInfo.scanningMethod) {
+            format.technicalInfo.scanningMethod = '';
+          }
           return format;
         });
         dispatch({ type: 'LOAD_SAVED_FORMATS', payload: savedFormats });
@@ -486,6 +553,9 @@ export const MeasurementProvider: React.FC<{ children: ReactNode }> = ({ childre
             weatherStationTests: false,
             weatherConditionsRecord: false,
           };
+        }
+        if (!currentFormat.technicalInfo.scanningMethod) {
+          currentFormat.technicalInfo.scanningMethod = '';
         }
         dispatch({ type: 'SET_CURRENT_FORMAT', payload: currentFormat });
       }
@@ -539,6 +609,7 @@ export const MeasurementProvider: React.FC<{ children: ReactNode }> = ({ childre
     updateInspectionData,
     addMeasurementResult,
     updateMeasurementResult,
+    updateMeasurementResultData,
     updateQualitativeData,
     addExternalEvent,
     deleteExternalEvent,

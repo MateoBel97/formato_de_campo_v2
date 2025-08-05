@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, TextInput, StyleSheet, TextInputProps } from 'react-native';
+import React, { useRef } from 'react';
+import { View, Text, TextInput, StyleSheet, TextInputProps, Platform, TouchableOpacity, Keyboard, InputAccessoryView } from 'react-native';
 import { COLORS } from '../constants';
 
 interface FormInputProps extends TextInputProps {
@@ -15,48 +15,85 @@ const FormInput: React.FC<FormInputProps> = ({
   required = false, 
   horizontal = false,
   style,
+  keyboardType,
   ...props 
 }) => {
+  const inputRef = useRef<TextInput>(null);
+  const inputAccessoryViewID = `${label}-input-accessory`;
+  
+  const isNumericKeyboard = keyboardType === 'numeric' || keyboardType === 'number-pad' || keyboardType === 'decimal-pad';
+  const shouldShowDoneButton = Platform.OS === 'ios' && isNumericKeyboard;
+
+  const handleDone = () => {
+    Keyboard.dismiss();
+    inputRef.current?.blur();
+  };
+
+  const renderInputAccessoryView = () => {
+    if (!shouldShowDoneButton) return null;
+    
+    return (
+      <InputAccessoryView nativeID={inputAccessoryViewID}>
+        <View style={styles.inputAccessory}>
+          <TouchableOpacity style={styles.doneButton} onPress={handleDone}>
+            <Text style={styles.doneButtonText}>Listo</Text>
+          </TouchableOpacity>
+        </View>
+      </InputAccessoryView>
+    );
+  };
   if (horizontal) {
     return (
-      <View style={styles.horizontalContainer}>
-        <View style={styles.horizontalLabelContainer}>
-          <Text style={styles.horizontalLabel}>{label}</Text>
-          {required && <Text style={styles.required}>*</Text>}
+      <>
+        <View style={styles.horizontalContainer}>
+          <View style={styles.horizontalLabelContainer}>
+            <Text style={styles.horizontalLabel}>{label}</Text>
+            {required && <Text style={styles.required}>*</Text>}
+          </View>
+          <View style={styles.horizontalInputContainer}>
+            <TextInput
+              ref={inputRef}
+              style={[
+                styles.horizontalInput,
+                error && styles.inputError,
+                style,
+              ]}
+              placeholderTextColor={COLORS.textSecondary}
+              keyboardType={keyboardType}
+              inputAccessoryViewID={shouldShowDoneButton ? inputAccessoryViewID : undefined}
+              {...props}
+            />
+            {error && <Text style={styles.errorText}>{error}</Text>}
+          </View>
         </View>
-        <View style={styles.horizontalInputContainer}>
-          <TextInput
-            style={[
-              styles.horizontalInput,
-              error && styles.inputError,
-              style,
-            ]}
-            placeholderTextColor={COLORS.textSecondary}
-            {...props}
-          />
-          {error && <Text style={styles.errorText}>{error}</Text>}
-        </View>
-      </View>
+        {renderInputAccessoryView()}
+      </>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.labelContainer}>
-        <Text style={styles.label}>{label}</Text>
-        {required && <Text style={styles.required}>*</Text>}
+    <>
+      <View style={styles.container}>
+        <View style={styles.labelContainer}>
+          <Text style={styles.label}>{label}</Text>
+          {required && <Text style={styles.required}>*</Text>}
+        </View>
+        <TextInput
+          ref={inputRef}
+          style={[
+            styles.input,
+            error && styles.inputError,
+            style,
+          ]}
+          placeholderTextColor={COLORS.textSecondary}
+          keyboardType={keyboardType}
+          inputAccessoryViewID={shouldShowDoneButton ? inputAccessoryViewID : undefined}
+          {...props}
+        />
+        {error && <Text style={styles.errorText}>{error}</Text>}
       </View>
-      <TextInput
-        style={[
-          styles.input,
-          error && styles.inputError,
-          style,
-        ]}
-        placeholderTextColor={COLORS.textSecondary}
-        {...props}
-      />
-      {error && <Text style={styles.errorText}>{error}</Text>}
-    </View>
+      {renderInputAccessoryView()}
+    </>
   );
 };
 
@@ -124,6 +161,28 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.surface,
     color: COLORS.text,
     minHeight: 36,
+  },
+  inputAccessory: {
+    backgroundColor: COLORS.surface,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    minHeight: 44,
+  },
+  doneButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: COLORS.primary,
+    borderRadius: 6,
+  },
+  doneButtonText: {
+    color: COLORS.surface,
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform, Modal } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Feather } from '@expo/vector-icons';
 import { COLORS } from '../constants';
@@ -23,6 +23,7 @@ const NativeTimePicker: React.FC<NativeTimePickerProps> = ({
 }) => {
   const [show, setShow] = useState(false);
   const [date, setDate] = useState(new Date());
+  const [tempDate, setTempDate] = useState(new Date());
 
   // Parse initial value and set date
   useEffect(() => {
@@ -45,6 +46,7 @@ const NativeTimePicker: React.FC<NativeTimePickerProps> = ({
         const newDate = new Date();
         newDate.setHours(hour24, minute, 0, 0);
         setDate(newDate);
+        setTempDate(newDate);
       }
     }
   }, [value]);
@@ -63,23 +65,37 @@ const NativeTimePicker: React.FC<NativeTimePickerProps> = ({
   };
 
   const onChange = (event: any, selectedDate?: Date) => {
-    const currentDate = selectedDate || date;
-    
     if (Platform.OS === 'android') {
       setShow(false);
-    }
-    
-    if (event.type === 'set' && selectedDate) {
-      setDate(currentDate);
-      const formattedTime = formatTime(currentDate);
-      onTimeChange(formattedTime);
-    } else if (event.type === 'dismissed') {
-      setShow(false);
+      if (event.type === 'set' && selectedDate) {
+        setDate(selectedDate);
+        setTempDate(selectedDate);
+        const formattedTime = formatTime(selectedDate);
+        onTimeChange(formattedTime);
+      }
+    } else {
+      // iOS - just update temp date, don't close modal or update value yet
+      if (selectedDate) {
+        setTempDate(selectedDate);
+      }
     }
   };
 
   const showTimePicker = () => {
+    setTempDate(date); // Initialize temp date with current value
     setShow(true);
+  };
+
+  const handleConfirm = () => {
+    setDate(tempDate);
+    const formattedTime = formatTime(tempDate);
+    onTimeChange(formattedTime);
+    setShow(false);
+  };
+
+  const handleCancel = () => {
+    setTempDate(date); // Reset temp date to current value
+    setShow(false);
   };
 
   const displayValue = value || placeholder;
@@ -104,18 +120,6 @@ const NativeTimePicker: React.FC<NativeTimePickerProps> = ({
             </Text>
             <Feather name="clock" size={18} color={COLORS.primary} />
           </TouchableOpacity>
-
-          {show && (
-            <DateTimePicker
-              testID="dateTimePicker"
-              value={date}
-              mode="time"
-              is24Hour={false}
-              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-              onChange={onChange}
-              style={styles.picker}
-            />
-          )}
         </View>
       </View>
     );
@@ -139,16 +143,51 @@ const NativeTimePicker: React.FC<NativeTimePickerProps> = ({
       </TouchableOpacity>
 
       {show && (
-        <DateTimePicker
-          testID="dateTimePicker"
-          value={date}
-          mode="time"
-          is24Hour={false}
-          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-          onChange={onChange}
-          style={styles.picker}
-        />
+        Platform.OS === 'ios' ? (
+          <Modal
+            visible={show}
+            transparent
+            animationType="slide"
+            onRequestClose={handleCancel}
+          >
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                <View style={styles.modalHeader}>
+                  <TouchableOpacity onPress={handleCancel} style={styles.cancelButton}>
+                    <Text style={styles.cancelButtonText}>Cancelar</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.modalTitle}>{label}</Text>
+                  <TouchableOpacity onPress={handleConfirm} style={styles.confirmButton}>
+                    <Text style={styles.confirmButtonText}>OK</Text>
+                  </TouchableOpacity>
+                </View>
+                
+                <View style={styles.pickerContainer}>
+                  <DateTimePicker
+                    testID="dateTimePicker"
+                    value={tempDate}
+                    mode="time"
+                    is24Hour={false}
+                    display="spinner"
+                    onChange={onChange}
+                    style={styles.iosPicker}
+                  />
+                </View>
+              </View>
+            </View>
+          </Modal>
+        ) : (
+          <DateTimePicker
+            testID="dateTimePicker"
+            value={tempDate}
+            mode="time"
+            is24Hour={false}
+            display="default"
+            onChange={onChange}
+          />
+        )
       )}
+
     </View>
   );
 };
@@ -225,6 +264,53 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     backgroundColor: COLORS.surface,
     minHeight: 36,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: 20,
+    maxHeight: '50%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.text,
+  },
+  cancelButton: {
+    padding: 8,
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    color: COLORS.textSecondary,
+  },
+  confirmButton: {
+    padding: 8,
+  },
+  confirmButtonText: {
+    fontSize: 16,
+    color: COLORS.primary,
+    fontWeight: '600',
+  },
+  pickerContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
+  },
+  iosPicker: {
+    backgroundColor: 'transparent',
   },
 });
 

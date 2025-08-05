@@ -5,47 +5,64 @@ import { useMeasurement } from '../context/MeasurementContext';
 import { COLORS } from '../constants';
 
 const QualitativeDataScreen: React.FC = () => {
-  const { state, dispatch } = useMeasurement();
+  const { state, updateQualitativeData, saveCurrentFormat } = useMeasurement();
   const [activeTab, setActiveTab] = useState('qualitative');
   const [qualitativeData, setQualitativeData] = useState('');
   const [sourceReceptorData, setSourceReceptorData] = useState('');
   const scrollViewRef = useRef<ScrollView>(null);
   const qualitativeInputRef = useRef<TextInput>(null);
   const sourceReceptorInputRef = useRef<TextInput>(null);
+  const hasLoadedInitialData = useRef(false);
   const currentFormat = state.currentFormat;
 
-  // Load existing data
+  // Load existing data only once when format is available and we haven't loaded yet
   useEffect(() => {
-    if (currentFormat?.qualitativeData) {
-      setQualitativeData(currentFormat.qualitativeData.description || 'La empresa se dedica a ');
-      setSourceReceptorData(currentFormat.qualitativeData.sourceReceptorInfo || 'Se ubica el sonómetro a ');
-    } else {
-      // Set default values if no qualitative data exists
-      setQualitativeData('La empresa se dedica a ');
-      setSourceReceptorData('Se ubica el sonómetro a ');
+    if (currentFormat && !hasLoadedInitialData.current) {
+      hasLoadedInitialData.current = true;
+      
+      if (currentFormat.qualitativeData) {
+        setQualitativeData(currentFormat.qualitativeData.conditionsDescription || 'La empresa se dedica a ');
+        setSourceReceptorData(currentFormat.qualitativeData.noiseSourceInfo || 'Se ubica el sonómetro a ');
+      } else {
+        // Set default values if no qualitative data exists
+        setQualitativeData('La empresa se dedica a ');
+        setSourceReceptorData('Se ubica el sonómetro a ');
+      }
     }
   }, [currentFormat]);
 
-  // Auto-save when data changes
+  // Auto-save when data changes (but only after initial load)
   useEffect(() => {
-    const saveTimeout = setTimeout(() => {
-      if ((qualitativeData !== '' || sourceReceptorData !== '') && dispatch && typeof dispatch === 'function') {
+    if (!hasLoadedInitialData.current) {
+      return; // Don't auto-save until initial data is loaded
+    }
+
+    const saveTimeout = setTimeout(async () => {
+      if (qualitativeData.trim() !== '' || sourceReceptorData.trim() !== '') {
         try {
-          dispatch({
-            type: 'UPDATE_QUALITATIVE_DATA',
-            payload: {
-              description: qualitativeData,
-              sourceReceptorInfo: sourceReceptorData,
-            },
-          });
+          const qualitativeDataObj = {
+            conditionsDescription: qualitativeData,
+            noiseSourceInfo: sourceReceptorData,
+          };
+          updateQualitativeData(qualitativeDataObj);
+          
+          // Small delay to allow state update
+          setTimeout(async () => {
+            try {
+              await saveCurrentFormat();
+              console.log('Qualitative data saved successfully');
+            } catch (error) {
+              console.error('Error saving qualitative data:', error);
+            }
+          }, 100);
         } catch (error) {
-          console.log('Error saving qualitative data:', error);
+          console.log('Error updating qualitative data:', error);
         }
       }
     }, 1000); // Save after 1 second of inactivity
 
     return () => clearTimeout(saveTimeout);
-  }, [qualitativeData, sourceReceptorData, dispatch]);
+  }, [qualitativeData, sourceReceptorData]);
 
   // Cleanup scroll timeout on unmount
   useEffect(() => {

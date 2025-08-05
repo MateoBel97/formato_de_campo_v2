@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { Feather, FontAwesome } from '@expo/vector-icons';
 import { useMeasurement } from '../context/MeasurementContext';
 import { COLORS, DRAWER_ITEMS } from '../constants';
@@ -23,8 +23,58 @@ const TabNavigator: React.FC<TabNavigatorProps> = ({ navigation }) => {
   const [activeTab, setActiveTab] = React.useState('GeneralInfo');
   const { state: measurementState } = useMeasurement();
 
-  const getIcon = (iconName: string, iconType: string, focused: boolean) => {
-    const color = focused ? COLORS.surface : COLORS.surface + '80';
+  const restrictedPages = ['MeasurementResults', 'QualitativeData', 'ExternalEvents', 'PhotoRegistry', 'Export'];
+
+  const isTechnicalInfoComplete = () => {
+    const technicalInfo = measurementState.currentFormat?.technicalInfo;
+    if (!technicalInfo) return false;
+    
+    return !!(
+      technicalInfo.measurementType &&
+      (technicalInfo.schedule.diurnal || technicalInfo.schedule.nocturnal) &&
+      technicalInfo.soundMeter.selected &&
+      (technicalInfo.soundMeter.selected !== 'other' || technicalInfo.soundMeter.other) &&
+      technicalInfo.calibrator.selected &&
+      (technicalInfo.calibrator.selected !== 'other' || technicalInfo.calibrator.other) &&
+      technicalInfo.weatherStation.selected &&
+      (technicalInfo.weatherStation.selected !== 'other' || technicalInfo.weatherStation.other) &&
+      technicalInfo.scanningMethod
+    );
+  };
+
+  const areAllInspectionFieldsTrue = () => {
+    const inspection = measurementState.currentFormat?.inspection;
+    if (!inspection) return false;
+    
+    return (
+      inspection.pointAssignment &&
+      inspection.calibrationVerification &&
+      inspection.parametersVerification &&
+      inspection.batteryStatus &&
+      inspection.timeSynchronization &&
+      inspection.weatherStationTests &&
+      inspection.weatherConditionsRecord
+    );
+  };
+
+  const canAccessPage = (pageName: string) => {
+    if (!restrictedPages.includes(pageName)) return true;
+    return isTechnicalInfoComplete() && areAllInspectionFieldsTrue();
+  };
+
+  const showAccessDeniedAlert = () => {
+    Alert.alert(
+      'Acceso Restringido',
+      'Para acceder a esta sección debe:\n\n• Completar y guardar toda la información técnica\n• Marcar como completados todos los campos de inspección previa',
+      [{ text: 'Entendido', style: 'default' }]
+    );
+  };
+
+  const getIcon = (iconName: string, iconType: string, focused: boolean, isRestricted: boolean = false) => {
+    let color = focused ? COLORS.surface : COLORS.surface + '80';
+    if (isRestricted) {
+      color = COLORS.surface + '40';
+    }
     const size = 20;
 
     if (iconType === 'FontAwesome') {
@@ -44,7 +94,7 @@ const TabNavigator: React.FC<TabNavigatorProps> = ({ navigation }) => {
       case 'TechnicalInfo':
         return <TechnicalInfoScreen />;
       case 'Inspection':
-        return <InspectionScreen />;
+        return <InspectionScreen onContinue={() => setActiveTab('MeasurementResults')} />;
       case 'MeasurementResults':
         return <MeasurementResultsScreen />;
       case 'QualitativeData':
@@ -100,6 +150,8 @@ const TabNavigator: React.FC<TabNavigatorProps> = ({ navigation }) => {
         >
           {DRAWER_ITEMS.map((item) => {
             const focused = activeTab === item.name;
+            const isRestricted = restrictedPages.includes(item.name);
+            const canAccess = canAccessPage(item.name);
             
             return (
               <TouchableOpacity
@@ -107,10 +159,17 @@ const TabNavigator: React.FC<TabNavigatorProps> = ({ navigation }) => {
                 style={[
                   styles.tab,
                   focused && styles.activeTab,
+                  isRestricted && !canAccess && styles.restrictedTab,
                 ]}
-                onPress={() => setActiveTab(item.name)}
+                onPress={() => {
+                  if (canAccess) {
+                    setActiveTab(item.name);
+                  } else {
+                    showAccessDeniedAlert();
+                  }
+                }}
               >
-                {getIcon(item.icon, item.iconType, focused)}
+                {getIcon(item.icon, item.iconType, focused, isRestricted && !canAccess)}
               </TouchableOpacity>
             );
           })}
@@ -199,6 +258,10 @@ const styles = StyleSheet.create({
   },
   activeTab: {
     backgroundColor: COLORS.surface,
+  },
+  restrictedTab: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    opacity: 0.5,
   },
   content: {
     flex: 1,

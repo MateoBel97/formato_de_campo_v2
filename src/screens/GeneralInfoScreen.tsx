@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, ScrollView, StyleSheet, Alert } from 'react-native';
+import { View, ScrollView, StyleSheet, Alert, Text } from 'react-native';
 import { Formik } from 'formik';
 import * as Yup from 'yup';
 import { useMeasurement } from '../context/MeasurementContext';
@@ -24,7 +24,7 @@ const validationSchema = Yup.object({
 });
 
 const GeneralInfoScreen: React.FC = () => {
-  const { state, updateGeneralInfo } = useMeasurement();
+  const { state, updateGeneralInfo, saveCurrentFormat } = useMeasurement();
   const [isSaving, setIsSaving] = useState(false);
 
   const currentFormat = state.currentFormat;
@@ -43,9 +43,11 @@ const GeneralInfoScreen: React.FC = () => {
     try {
       setIsSaving(true);
       updateGeneralInfo(values);
+      await saveCurrentFormat();
       Alert.alert('Éxito', 'Información general guardada correctamente');
     } catch (error) {
       Alert.alert('Error', 'No se pudo guardar la información');
+      console.error('Error saving general info:', error);
     } finally {
       setIsSaving(false);
     }
@@ -65,6 +67,12 @@ const GeneralInfoScreen: React.FC = () => {
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+      <View style={styles.content}>
+        <Text style={styles.title}>Información General</Text>
+        <Text style={styles.subtitle}>
+          Datos básicos del estudio de medición acústica
+        </Text>
+      </View>
       <Formik
         initialValues={initialValues}
         validationSchema={validationSchema}
@@ -179,8 +187,24 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
+  content: {
+    padding: 16,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginBottom: 8,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: COLORS.textSecondary,
+    marginBottom: 24,
+    lineHeight: 22,
+  },
   form: {
     padding: 16,
+    paddingTop: 0,
   },
   workOrderContainer: {
     marginBottom: 16,

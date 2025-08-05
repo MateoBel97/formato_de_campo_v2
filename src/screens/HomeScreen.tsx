@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, SafeAreaView } from 'react-native';
+import { View, Text, StyleSheet, SafeAreaView, Image } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { useMeasurement } from '../context/MeasurementContext';
@@ -25,34 +25,44 @@ const HomeScreen: React.FC = () => {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Formato de Campo V2</Text>
-          <Text style={styles.subtitle}>
-            Aplicación para mediciones acústicas profesionales
-          </Text>
-        </View>
-
-        <View style={styles.buttonContainer}>
-          <FormButton
-            title="Crear Nuevo Formato"
-            onPress={handleCreateNewFormat}
-            size="large"
-            style={styles.primaryButton}
-          />
+        <View style={styles.mainContent}>
+          <View style={styles.imageContainer}>
+            <Image 
+              source={require('../assets/images/logo-eprodesa-big.jpg')}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
+          </View>
           
-          <FormButton
-            title="Ver Formatos Guardados"
-            onPress={handleViewSavedFormats}
-            variant="outline"
-            size="large"
-            style={styles.secondaryButton}
-          />
-        </View>
+          <View style={styles.header}>
+            <Text style={styles.title}>Formato de Campo Eprodesa</Text>
+            <Text style={styles.subtitle}>
+              Aplicación para mediciones acústicas profesionales
+            </Text>
+          </View>
 
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>
-            Gestiona mediciones de ruido bajo diferentes métodos y condiciones
-          </Text>
+          <View style={styles.buttonContainer}>
+            <FormButton
+              title="Crear Nuevo Formato"
+              onPress={handleCreateNewFormat}
+              size="large"
+              style={styles.primaryButton}
+            />
+            
+            <FormButton
+              title="Ver Formatos Guardados"
+              onPress={handleViewSavedFormats}
+              variant="outline"
+              size="large"
+              style={styles.secondaryButton}
+            />
+          </View>
+
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>
+              Gestiona mediciones de ruido bajo diferentes métodos y condiciones
+            </Text>
+          </View>
         </View>
       </View>
     </SafeAreaView>
@@ -66,8 +76,19 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    justifyContent: 'center',
+    paddingTop: 20,
+  },
+  mainContent: {
+    flex: 1,
     paddingHorizontal: 24,
+    justifyContent: 'center',
+  },
+  imageContainer: {
+    marginBottom: 30,
+  },
+  logoImage: {
+    width: '100%',
+    height: 120,
   },
   header: {
     alignItems: 'center',

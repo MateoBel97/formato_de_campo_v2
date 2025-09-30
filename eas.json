@@ -31,6 +31,10 @@
       "android": {
         "buildType": "apk"
       }
+    },
+    "web": {
+      "extends": "production",
+      "platform": "web"
     }
   },
   "submit": {

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <meta name="theme-color" content="#2E7D32">
+    <title>Formato de Campo Eprodesa</title>
+    <style>
+        /* Reset y configuración base para scroll */
+        * {
+            box-sizing: border-box;
+        }
+
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        #root {
+            height: 100%;
+            overflow: auto;
+        }
+
+        /* Estilos específicos para React Native Web */
+        .rn-scroll-view {
+            overflow: auto !important;
+            -webkit-overflow-scrolling: touch !important;
+        }
+
+        /* Asegurar que ScrollView funcione correctamente */
+        [data-class="rn-scroll-view"] {
+            overflow: auto !important;
+            -webkit-overflow-scrolling: touch !important;
+            height: auto !important;
+        }
+
+        /* Contenedor principal scrolleable */
+        .scrollable-container {
+            overflow-y: auto;
+            overflow-x: hidden;
+            height: 100vh;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        /* Ajustes para pantallas táctiles */
+        @media (pointer: coarse) {
+            * {
+                -webkit-overflow-scrolling: touch;
+            }
+        }
+
+        /* Estilos para barras de scroll en Windows */
+        ::-webkit-scrollbar {
+            width: 12px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 6px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #2E7D32;
+            border-radius: 6px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #1B5E20;
+        }
+
+        /* Prevenir selección de texto en elementos de UI */
+        .non-selectable {
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+
+        /* Asegurar que los modales funcionen correctamente */
+        .modal-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 1000;
+            overflow: auto;
+        }
+    </style>
+</head>
+<body>
+    <noscript>Necesitas habilitar JavaScript para ejecutar esta aplicación.</noscript>
+    <div id="root"></div>
+</body>
+</html>

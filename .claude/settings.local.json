@@ -30,8 +30,12 @@
       "Bash(git commit:*)",
       "Bash(dir:*)",
       "Bash(npx eas build:*)",
-      "Bash(npx eas:*)"
+      "Bash(npx eas:*)",
+      "Bash(grep:*)",
+      "mcp__ide__getDiagnostics",
+      "Read(c:\\Users\\Mateo B\\Downloads/**)"
     ],
-    "deny": []
+    "deny": [],
+    "defaultMode": "acceptEdits"
   }
 }

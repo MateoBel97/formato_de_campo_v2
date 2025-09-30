@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ViewStyle } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { COLORS } from '../constants';
 
@@ -9,6 +9,7 @@ interface FormCheckboxProps {
   onValueChange: (value: boolean) => void;
   error?: string;
   required?: boolean;
+  style?: ViewStyle;
 }
 
 const FormCheckbox: React.FC<FormCheckboxProps> = ({
@@ -17,9 +18,10 @@ const FormCheckbox: React.FC<FormCheckboxProps> = ({
   onValueChange,
   error,
   required = false,
+  style,
 }) => {
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, style]}>
       <TouchableOpacity
         style={styles.checkboxContainer}
         onPress={() => onValueChange(!value)}

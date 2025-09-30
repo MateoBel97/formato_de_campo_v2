@@ -21,6 +21,7 @@ const FormButton: React.FC<FormButtonProps> = ({
   const getButtonStyle = () => {
     const baseStyle = [styles.button];
     
+    // Size styles
     switch (size) {
       case 'small':
         baseStyle.push(styles.smallButton);
@@ -32,6 +33,7 @@ const FormButton: React.FC<FormButtonProps> = ({
         baseStyle.push(styles.mediumButton);
     }
 
+    // Variant styles
     switch (variant) {
       case 'secondary':
         baseStyle.push(styles.secondaryButton);
@@ -46,6 +48,7 @@ const FormButton: React.FC<FormButtonProps> = ({
         baseStyle.push(styles.primaryButton);
     }
 
+    // Disabled/loading state
     if (disabled || loading) {
       baseStyle.push(styles.disabledButton);
     }
@@ -56,6 +59,7 @@ const FormButton: React.FC<FormButtonProps> = ({
   const getTextStyle = () => {
     const baseStyle = [styles.buttonText];
     
+    // Size text styles
     switch (size) {
       case 'small':
         baseStyle.push(styles.smallText);
@@ -67,6 +71,7 @@ const FormButton: React.FC<FormButtonProps> = ({
         baseStyle.push(styles.mediumText);
     }
 
+    // Variant text styles
     switch (variant) {
       case 'outline':
         baseStyle.push(styles.outlineText);
@@ -78,6 +83,7 @@ const FormButton: React.FC<FormButtonProps> = ({
         baseStyle.push(styles.primaryText);
     }
 
+    // Disabled/loading text state
     if (disabled || loading) {
       baseStyle.push(styles.disabledText);
     }
@@ -113,56 +119,95 @@ const styles = StyleSheet.create({
   smallButton: {
     paddingHorizontal: 12,
     paddingVertical: 6,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
   },
   mediumButton: {
     paddingHorizontal: 16,
     paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
   },
   largeButton: {
     paddingHorizontal: 20,
     paddingVertical: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
   },
   primaryButton: {
     backgroundColor: COLORS.primary,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
   },
   secondaryButton: {
     backgroundColor: COLORS.secondary,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
   },
   outlineButton: {
     backgroundColor: 'transparent',
     borderWidth: 1,
     borderColor: COLORS.primary,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
   },
   dangerButton: {
     backgroundColor: COLORS.error,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
   },
   disabledButton: {
     backgroundColor: COLORS.textSecondary,
     borderColor: COLORS.textSecondary,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
   },
   buttonText: {
     fontWeight: '600',
   },
   smallText: {
     fontSize: 14,
+    fontWeight: '600',
   },
   mediumText: {
     fontSize: 16,
+    fontWeight: '600',
   },
   largeText: {
     fontSize: 18,
+    fontWeight: '600',
   },
   primaryText: {
     color: COLORS.surface,
+    fontWeight: '600',
   },
   outlineText: {
     color: COLORS.primary,
+    fontWeight: '600',
   },
   dangerText: {
     color: COLORS.surface,
+    fontWeight: '600',
   },
   disabledText: {
     color: COLORS.background,
+    fontWeight: '600',
   },
 });
 

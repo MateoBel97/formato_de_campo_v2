@@ -5,6 +5,7 @@ import { Feather } from '@expo/vector-icons';
 import FormInput from './FormInput';
 import FormButton from './FormButton';
 import { COLORS } from '../constants';
+import { convertDecimalToDMS, isValidDMSFormat } from '../utils/numberUtils';
 
 interface LocationPickerProps {
   coordinatesN: string;
@@ -44,14 +45,14 @@ const LocationPicker: React.FC<LocationPickerProps> = ({
 
       const { latitude, longitude } = location.coords;
       
-      const latitudeStr = Math.abs(latitude).toFixed(6);
-      const longitudeStr = Math.abs(longitude).toFixed(6);
+      const latitudeDMS = convertDecimalToDMS(Math.abs(latitude));
+      const longitudeDMS = convertDecimalToDMS(Math.abs(longitude));
       
-      onCoordinatesChange(latitudeStr, longitudeStr);
+      onCoordinatesChange(latitudeDMS, longitudeDMS);
       
       Alert.alert(
         'Ubicación obtenida',
-        `Coordenadas actualizadas:\nN: ${latitudeStr}\nW: ${longitudeStr}`,
+        `Coordenadas actualizadas:\nN: ${latitudeDMS}\nW: ${longitudeDMS}`,
         [{ text: 'OK' }]
       );
     } catch (error) {
@@ -76,8 +77,7 @@ const LocationPicker: React.FC<LocationPickerProps> = ({
             value={coordinatesN}
             onChangeText={(text) => onCoordinatesChange(text, coordinatesW)}
             error={errors?.coordinatesN}
-            keyboardType="numeric"
-            placeholder="0.000000"
+            placeholder="0°00.0'00.00&quot;"
           />
         </View>
         
@@ -87,8 +87,7 @@ const LocationPicker: React.FC<LocationPickerProps> = ({
             value={coordinatesW}
             onChangeText={(text) => onCoordinatesChange(coordinatesN, text)}
             error={errors?.coordinatesW}
-            keyboardType="numeric"
-            placeholder="0.000000"
+            placeholder="0°00.0'00.00&quot;"
           />
         </View>
       </View>

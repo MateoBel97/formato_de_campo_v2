@@ -19,18 +19,18 @@ export const COLORS = {
   diurnalLight: '#FFB74D',
   nocturnal: '#42A5F5',
   nocturnalLight: '#64B5F6',
-  // Point colors
+  // Point colors - Optimized for maximum differentiation between consecutive points
   pointColors: [
-    '#E91E63', // Pink
-    '#9C27B0', // Purple
-    '#673AB7', // Deep Purple
-    '#3F51B5', // Indigo
-    '#2196F3', // Blue
-    '#00BCD4', // Cyan
-    '#009688', // Teal
-    '#FF5722', // Deep Orange
-    '#795548', // Brown
-    '#607D8B', // Blue Grey
+    '#E53E3E', // Red
+    '#38A169', // Green 
+    '#3182CE', // Blue
+    '#D69E2E', // Yellow/Orange
+    '#805AD5', // Purple
+    '#DD6B20', // Orange
+    '#319795', // Teal
+    '#E91E63', // Pink/Magenta
+    '#4A5568', // Gray
+    '#C53030', // Dark Red
   ],
 };
 
@@ -135,6 +135,12 @@ export const DRAWER_ITEMS = [
     name: 'PhotoRegistry',
     title: 'Registro Fotográfico',
     icon: 'camera',
+    iconType: 'Feather',
+  },
+  {
+    name: 'ResultsSummary',
+    title: 'Resumen de Resultados',
+    icon: 'pie-chart',
     iconType: 'Feather',
   },
   {

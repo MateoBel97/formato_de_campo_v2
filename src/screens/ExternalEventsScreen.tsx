@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, Alert, TouchableOpacity } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Alert, TouchableOpacity, Pressable } from 'react-native';
 import { Formik } from 'formik';
 import * as Yup from 'yup';
 import { Feather } from '@expo/vector-icons';
@@ -26,9 +26,44 @@ const ExternalEventsScreen: React.FC = () => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const [editingEvent, setEditingEvent] = useState<ExternalEvent | null>(null);
+  const [quickEventData, setQuickEventData] = useState<{name: string, time: string} | null>(null);
 
   const currentFormat = state.currentFormat;
   const externalEvents = currentFormat?.externalEvents || [];
+
+  // Get current time formatted as 12-hour format
+  const getCurrentTime = () => {
+    const now = new Date();
+    let hours = now.getHours();
+    const minutes = now.getMinutes();
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    
+    hours = hours % 12;
+    hours = hours ? hours : 12; // 0 should be 12
+    const minutesStr = minutes < 10 ? '0' + minutes : minutes;
+    
+    return `${hours}:${minutesStr} ${ampm}`;
+  };
+
+  // Quick event types with their icons
+  const quickEventTypes = [
+    { name: 'Avión', icon: 'send' }, // Send icon looks more like a plane
+    { name: 'Vehículo pesado', icon: 'truck' },
+    { name: 'Perro', icon: 'circle' }, // Compass looks like a paw print from above
+    { name: 'Persona', icon: 'user' },
+    { name: 'Equipo externo', icon: 'settings' }, // Settings gear for equipment
+    { name: 'Otro', icon: 'plus' }, // Generic "other" option
+  ];
+
+  // Handle quick event button press
+  const handleQuickEvent = (eventName: string) => {
+    const currentTime = getCurrentTime();
+    // For "Otro", leave name empty but set time
+    const name = eventName === 'Otro' ? '' : eventName;
+    setQuickEventData({ name: name, time: currentTime });
+    setEditingEvent(null); // Make sure we're not editing
+    setShowAddForm(true);
+  };
 
   const getInitialValues = () => {
     if (editingEvent) {
@@ -37,6 +72,14 @@ const ExternalEventsScreen: React.FC = () => {
         level: editingEvent.level.toString(),
         time: editingEvent.time,
         duration: editingEvent.duration.toString(),
+      };
+    }
+    if (quickEventData) {
+      return {
+        name: quickEventData.name,
+        level: '',
+        time: quickEventData.time,
+        duration: '',
       };
     }
     return {
@@ -77,6 +120,7 @@ const ExternalEventsScreen: React.FC = () => {
         addExternalEvent(newEvent);
         await saveCurrentFormat();
         setShowAddForm(false);
+        setQuickEventData(null);
       // }
     } catch (error) {
       Alert.alert('Error', editingEvent ? 'No se pudo actualizar el evento externo' : 'No se pudo agregar el evento externo');
@@ -108,13 +152,36 @@ const ExternalEventsScreen: React.FC = () => {
 
   const handleEditEvent = (event: ExternalEvent) => {
     setEditingEvent(event);
+    setQuickEventData(null); // Clear quick event data
     setShowAddForm(true);
   };
 
   const handleCancelEdit = () => {
     setEditingEvent(null);
+    setQuickEventData(null);
     setShowAddForm(false);
   };
+
+  const renderQuickEventButtons = () => (
+    <View style={styles.quickEventsSection}>
+      <Text style={styles.quickEventsTitle}>Eventos comunes</Text>
+      <View style={styles.quickEventsGrid}>
+        {quickEventTypes.map((eventType) => (
+          <Pressable
+            key={eventType.name}
+            style={({ pressed }) => [
+              styles.quickEventButton,
+              pressed && styles.quickEventButtonPressed
+            ]}
+            onPress={() => handleQuickEvent(eventType.name)}
+          >
+            <Feather name={eventType.icon as any} size={18} color={COLORS.surface} />
+            <Text style={styles.quickEventButtonText}>{eventType.name}</Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
 
   const renderEventCard = (event: ExternalEvent, index: number) => (
     <View key={event.id} style={styles.eventCard}>
@@ -155,12 +222,20 @@ const ExternalEventsScreen: React.FC = () => {
   }
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+    <ScrollView 
+        style={styles.container} 
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        nestedScrollEnabled={true}
+      >
       <View style={styles.content}>
         <Text style={styles.title}>Eventos Externos</Text>
         <Text style={styles.subtitle}>
           Registre los eventos externos que puedan afectar las mediciones acústicas
         </Text>
+
+        {/* Quick event buttons */}
+        {renderQuickEventButtons()}
 
         {/* Lista de eventos */}
         <View style={styles.eventsSection}>
@@ -168,28 +243,21 @@ const ExternalEventsScreen: React.FC = () => {
             <Text style={styles.sectionTitle}>
               Eventos registrados ({externalEvents.length})
             </Text>
-            <TouchableOpacity
-              style={styles.addButton}
-              onPress={() => setShowAddForm(true)}
-            >
-              <Feather name="plus" size={20} color={COLORS.surface} />
-              <Text style={styles.addButtonText}>Agregar evento</Text>
-            </TouchableOpacity>
           </View>
 
-          {externalEvents.length === 0 ? (
+          {externalEvents.length === 0 && !showAddForm ? (
             <View style={styles.emptyContainer}>
               <Feather name="alert-triangle" size={48} color={COLORS.textSecondary} />
               <Text style={styles.emptyTitle}>No hay eventos externos registrados</Text>
               <Text style={styles.emptyText}>
-                Toque "Agregar evento" para registrar el primer evento externo
+                Use los botones de arriba para registrar eventos comunes o toque "Otro" para eventos personalizados
               </Text>
             </View>
-          ) : (
+          ) : externalEvents.length > 0 ? (
             <View style={styles.eventsList}>
               {externalEvents.map((event, index) => renderEventCard(event, index))}
             </View>
-          )}
+          ) : null}
         </View>
 
         {/* Formulario de agregar/editar */}
@@ -197,7 +265,12 @@ const ExternalEventsScreen: React.FC = () => {
           <View style={styles.formSection}>
             <View style={styles.formHeader}>
               <Text style={styles.formTitle}>
-                {editingEvent ? 'Editar evento externo' : 'Agregar evento externo'}
+                {editingEvent 
+                  ? 'Editar evento externo' 
+                  : quickEventData 
+                    ? `Agregar evento: ${quickEventData.name}`
+                    : 'Agregar evento externo'
+                }
               </Text>
               <TouchableOpacity
                 style={styles.closeButton}
@@ -219,7 +292,7 @@ const ExternalEventsScreen: React.FC = () => {
                     label="Nombre del evento"
                     value={values.name}
                     onChangeText={handleChange('name')}
-                    error={touched.name && errors.name}
+                    error={touched.name && errors.name ? String(errors.name) : undefined}
                     placeholder="Ej: Paso de vehículo pesado"
                     required
                   />
@@ -227,8 +300,11 @@ const ExternalEventsScreen: React.FC = () => {
                   <FormInput
                     label="Nivel (dBA)"
                     value={values.level}
-                    onChangeText={handleChange('level')}
-                    error={touched.level && errors.level}
+                    onChangeText={(text) => {
+                      const normalizedText = text.replace(',', '.');
+                      handleChange('level')(normalizedText);
+                    }}
+                    error={touched.level && errors.level ? String(errors.level) : undefined}
                     keyboardType="numeric"
                     placeholder="0.0"
                     required
@@ -243,10 +319,13 @@ const ExternalEventsScreen: React.FC = () => {
                   />
 
                   <FormInput
-                    label="Duración (minutos)"
+                    label="Duración (segundos)"
                     value={values.duration}
-                    onChangeText={handleChange('duration')}
-                    error={touched.duration && errors.duration}
+                    onChangeText={(text) => {
+                      const normalizedText = text.replace(',', '.');
+                      handleChange('duration')(normalizedText);
+                    }}
+                    error={touched.duration && errors.duration ? String(errors.duration) : undefined}
                     keyboardType="numeric"
                     placeholder="0.0"
                     required
@@ -261,7 +340,7 @@ const ExternalEventsScreen: React.FC = () => {
                     />
                     <FormButton
                       title={isAdding ? 'Guardando...' : (editingEvent ? 'Actualizar' : 'Agregar')}
-                      onPress={handleSubmit}
+                      onPress={() => handleSubmit()}
                       loading={isAdding}
                       style={styles.submitButton}
                     />
@@ -271,6 +350,8 @@ const ExternalEventsScreen: React.FC = () => {
             </Formik>
           </View>
         )}
+        
+        <View style={styles.bottomSpacing} />
       </View>
     </ScrollView>
   );
@@ -296,26 +377,34 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     lineHeight: 22,
   },
-  eventsSection: {
+  quickEventsSection: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 12,
+    padding: 16,
     marginBottom: 24,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  sectionTitle: {
+  quickEventsTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: COLORS.text,
+    marginBottom: 16,
+    textAlign: 'center',
   },
-  addButton: {
+  quickEventsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    justifyContent: 'space-between',
+  },
+  quickEventButton: {
     backgroundColor: COLORS.primary,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     borderRadius: 20,
     elevation: 2,
     shadowColor: '#000',
@@ -325,12 +414,34 @@ const styles = StyleSheet.create({
     },
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
+    flexBasis: '48%',
+    minWidth: 120,
+    marginBottom: 8,
+    zIndex: 1,
   },
-  addButtonText: {
+  quickEventButtonPressed: {
+    backgroundColor: COLORS.primary + 'CC', // Semi-transparent when pressed
+    transform: [{ scale: 0.98 }],
+  },
+  quickEventButtonText: {
     color: COLORS.surface,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     marginLeft: 6,
+    textAlign: 'center',
+    flexShrink: 1,
+  },
+  eventsSection: {
+    marginBottom: 24,
+  },
+  sectionHeader: {
+    marginBottom: 16,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    textAlign: 'center',
   },
   eventsList: {
     gap: 12,
@@ -464,6 +575,9 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: COLORS.error,
     textAlign: 'center',
+  },
+  bottomSpacing: {
+    height: 240,
   },
 });
 

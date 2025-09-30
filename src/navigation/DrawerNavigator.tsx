@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import React, { useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Platform } from 'react-native';
 import { Feather, FontAwesome } from '@expo/vector-icons';
 import { useMeasurement } from '../context/MeasurementContext';
 import { COLORS, DRAWER_ITEMS } from '../constants';
@@ -12,7 +12,8 @@ import InspectionScreen from '../screens/InspectionScreen';
 import MeasurementResultsScreen from '../screens/MeasurementResultsScreen';
 import QualitativeDataScreen from '../screens/QualitativeDataScreen';
 import ExternalEventsScreen from '../screens/ExternalEventsScreen';
-import PhotoRegistryScreen from '../screens/PhotoRegistryScreen';
+import PhotoRegistryScreen, { PhotoRegistryScreenRef } from '../screens/PhotoRegistryScreen';
+import ResultsSummaryScreen from '../screens/ResultsSummaryScreen';
 import ExportScreen from '../screens/ExportScreen';
 
 interface TabNavigatorProps {
@@ -22,8 +23,9 @@ interface TabNavigatorProps {
 const TabNavigator: React.FC<TabNavigatorProps> = ({ navigation }) => {
   const [activeTab, setActiveTab] = React.useState('GeneralInfo');
   const { state: measurementState } = useMeasurement();
+  const photoRegistryRef = useRef<PhotoRegistryScreenRef>(null);
 
-  const restrictedPages = ['MeasurementResults', 'QualitativeData', 'ExternalEvents', 'PhotoRegistry', 'Export'];
+  const restrictedPages = ['MeasurementResults', 'QualitativeData', 'ExternalEvents', 'PhotoRegistry', 'ResultsSummary', 'Export'];
 
   const isTechnicalInfoComplete = () => {
     const technicalInfo = measurementState.currentFormat?.technicalInfo;
@@ -71,7 +73,7 @@ const TabNavigator: React.FC<TabNavigatorProps> = ({ navigation }) => {
   };
 
   const getIcon = (iconName: string, iconType: string, focused: boolean, isRestricted: boolean = false) => {
-    let color = focused ? COLORS.surface : COLORS.surface + '80';
+    let color = focused ? COLORS.primary : COLORS.surface + '80';
     if (isRestricted) {
       color = COLORS.surface + '40';
     }
@@ -102,7 +104,18 @@ const TabNavigator: React.FC<TabNavigatorProps> = ({ navigation }) => {
       case 'ExternalEvents':
         return <ExternalEventsScreen />;
       case 'PhotoRegistry':
-        return <PhotoRegistryScreen />;
+        return <PhotoRegistryScreen ref={photoRegistryRef} />;
+      case 'ResultsSummary':
+        return <ResultsSummaryScreen
+          onNavigateToResults={() => setActiveTab('MeasurementResults')}
+          onNavigateToPhotoRegistry={() => {
+            setActiveTab('PhotoRegistry');
+            // Use setTimeout to ensure the tab is switched before scrolling
+            setTimeout(() => {
+              photoRegistryRef.current?.scrollToCroquis();
+            }, 100);
+          }}
+        />;
       case 'Export':
         return <ExportScreen />;
       default:
@@ -193,10 +206,18 @@ const DrawerNavigatorWrapper: React.FC<{ navigation: any }> = ({ navigation }) =
 const DrawerNavigator = DrawerNavigatorWrapper;
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
+  container: Platform.select({
+    web: {
+      height: '100vh',
+      backgroundColor: COLORS.background,
+      display: 'flex',
+      flexDirection: 'column',
+    },
+    default: {
+      flex: 1,
+      backgroundColor: COLORS.background,
+    },
+  }),
   header: {
     backgroundColor: COLORS.primary,
     paddingTop: 44, // Status bar height
@@ -263,9 +284,17 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.05)',
     opacity: 0.5,
   },
-  content: {
-    flex: 1,
-  },
+  content: Platform.select({
+    web: {
+      flex: 1,
+      overflow: 'auto',
+      WebkitOverflowScrolling: 'touch',
+      height: 'calc(100vh - 120px)', // Subtract header height
+    },
+    default: {
+      flex: 1,
+    },
+  }),
 });
 
 export default DrawerNavigator;

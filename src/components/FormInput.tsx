@@ -1,12 +1,15 @@
 import React, { useRef } from 'react';
 import { View, Text, TextInput, StyleSheet, TextInputProps, Platform, TouchableOpacity, Keyboard, InputAccessoryView } from 'react-native';
 import { COLORS } from '../constants';
+import { normalizeDecimalInput, cleanDecimalInput, isValidDecimalInput } from '../utils/numberUtils';
 
 interface FormInputProps extends TextInputProps {
   label: string;
   error?: string;
   required?: boolean;
   horizontal?: boolean;
+  selectTextOnFocus?: boolean;
+  hideDoneButton?: boolean;
 }
 
 const FormInput: React.FC<FormInputProps> = ({ 
@@ -14,19 +17,61 @@ const FormInput: React.FC<FormInputProps> = ({
   error, 
   required = false, 
   horizontal = false,
+  selectTextOnFocus,
+  hideDoneButton = false,
   style,
   keyboardType,
+  onFocus,
+  onChangeText,
+  onBlur,
   ...props 
 }) => {
   const inputRef = useRef<TextInput>(null);
   const inputAccessoryViewID = `${label}-input-accessory`;
   
-  const isNumericKeyboard = keyboardType === 'numeric' || keyboardType === 'number-pad' || keyboardType === 'decimal-pad';
-  const shouldShowDoneButton = Platform.OS === 'ios' && isNumericKeyboard;
+  const isNumericKeyboard = keyboardType === 'numeric' || keyboardType === 'number-pad' || keyboardType === 'decimal-pad' || keyboardType === 'numbers-and-punctuation';
+  const isDecimalKeyboard = keyboardType === 'decimal-pad';
+  const shouldShowDoneButton = Platform.OS === 'ios' && isNumericKeyboard && !hideDoneButton;
+  
+  // Enable text selection by default for numeric fields, unless explicitly disabled
+  const shouldSelectTextOnFocus = selectTextOnFocus !== undefined ? selectTextOnFocus : isNumericKeyboard;
 
   const handleDone = () => {
     Keyboard.dismiss();
     inputRef.current?.blur();
+  };
+
+  const handleFocus = (e: any) => {
+    if (shouldSelectTextOnFocus && inputRef.current) {
+      // Use setTimeout to ensure the input is fully focused before selecting text
+      setTimeout(() => {
+        inputRef.current?.setSelection(0, props.value?.toString().length || 0);
+      }, 100);
+    }
+    
+    // Call original onFocus if provided (but only if explicitly passed)
+    if (onFocus) {
+      onFocus(e);
+    }
+  };
+
+  const handleChangeText = (text: string) => {
+    if (isDecimalKeyboard) {
+      // Clean and validate decimal input, but preserve the original format
+      const cleanedText = cleanDecimalInput(text);
+      if (isValidDecimalInput(cleanedText)) {
+        onChangeText?.(cleanedText);
+      }
+    } else {
+      onChangeText?.(text);
+    }
+  };
+
+  const handleBlur = (e: any) => {
+    // Call original onBlur which will trigger auto-save
+    if (onBlur) {
+      onBlur(e);
+    }
   };
 
   const renderInputAccessoryView = () => {
@@ -61,6 +106,9 @@ const FormInput: React.FC<FormInputProps> = ({
               placeholderTextColor={COLORS.textSecondary}
               keyboardType={keyboardType}
               inputAccessoryViewID={shouldShowDoneButton ? inputAccessoryViewID : undefined}
+              onFocus={handleFocus}
+              onChangeText={handleChangeText}
+              onBlur={handleBlur}
               {...props}
             />
             {error && <Text style={styles.errorText}>{error}</Text>}
@@ -88,6 +136,9 @@ const FormInput: React.FC<FormInputProps> = ({
           placeholderTextColor={COLORS.textSecondary}
           keyboardType={keyboardType}
           inputAccessoryViewID={shouldShowDoneButton ? inputAccessoryViewID : undefined}
+          onFocus={handleFocus}
+          onChangeText={handleChangeText}
+          onBlur={handleBlur}
           {...props}
         />
         {error && <Text style={styles.errorText}>{error}</Text>}

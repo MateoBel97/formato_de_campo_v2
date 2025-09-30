@@ -53,6 +53,11 @@ const QualitativeDataScreen: React.FC = () => {
               console.log('Qualitative data saved successfully');
             } catch (error) {
               console.error('Error saving qualitative data:', error);
+              Alert.alert(
+                'Error de Almacenamiento',
+                'No se pudieron guardar los datos cualitativos. Por favor, intente nuevamente.',
+                [{ text: 'OK' }]
+              );
             }
           }, 100);
         } catch (error) {
@@ -117,7 +122,7 @@ const QualitativeDataScreen: React.FC = () => {
   const [isScrolling, setIsScrolling] = useState(false);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const handleInputFocus = (inputRef: React.RefObject<TextInput>) => {
+  const handleInputFocus = (inputRef: React.RefObject<TextInput | null>) => {
     // Prevent frequent scrolling
     if (isScrolling) return;
     
@@ -131,26 +136,32 @@ const QualitativeDataScreen: React.FC = () => {
         if (inputRef.current && scrollViewRef.current) {
           setIsScrolling(true);
           
-          inputRef.current.measure((x, y, width, height, pageX, pageY) => {
-            // Only scroll if the input is near the top or bottom of the screen
-            const screenHeight = 600; // Approximate screen height
-            const keyboardHeight = 300; // Approximate keyboard height
-            const visibleHeight = screenHeight - keyboardHeight;
+          inputRef.current.measureInWindow((x, y, width, height) => {
+            // Get screen dimensions
+            const screenHeight = 700; // Conservative estimate
+            const keyboardHeight = 280; // Conservative estimate for keyboard
+            const headerHeight = 120; // Approximate header height
+            const availableHeight = screenHeight - keyboardHeight - headerHeight;
             
-            if (pageY < 100 || pageY > visibleHeight - 100) {
-              const scrollToY = Math.max(0, pageY - 150); // More space above
-              scrollViewRef.current?.scrollTo({ y: scrollToY, animated: true });
+            // Only scroll if the text field is not fully visible
+            const fieldBottom = y + height;
+            const visibleBottom = headerHeight + availableHeight;
+            
+            if (y < headerHeight || fieldBottom > visibleBottom) {
+              // Calculate scroll position to center the text field
+              const targetY = Math.max(0, y - headerHeight - 50);
+              scrollViewRef.current?.scrollTo({ y: targetY, animated: true });
             }
             
             // Reset scrolling flag after animation
-            setTimeout(() => setIsScrolling(false), 500);
+            setTimeout(() => setIsScrolling(false), 600);
           });
         }
       } catch (error) {
         console.log('Error in handleInputFocus:', error);
         setIsScrolling(false);
       }
-    }, 200); // Longer delay to prevent frequent triggers
+    }, 300); // Delay to allow keyboard to appear
   };
 
   const renderQualitativeForm = () => {
@@ -160,6 +171,9 @@ const QualitativeDataScreen: React.FC = () => {
         <Text style={styles.formSubtitle}>
           Describa las condiciones generales del entorno, características del lugar de medición, 
           observaciones relevantes y cualquier información adicional que considere importante para el estudio.
+        </Text>
+        <Text style={styles.scrollHint}>
+          💡 Puede desplazarse dentro del campo de texto para escribir contenido extenso
         </Text>
         
         <TextInput
@@ -171,7 +185,8 @@ const QualitativeDataScreen: React.FC = () => {
           placeholderTextColor={COLORS.textSecondary}
           multiline
           textAlignVertical="top"
-          scrollEnabled
+          scrollEnabled={true}
+          nestedScrollEnabled={true}
           onFocus={() => handleInputFocus(qualitativeInputRef)}
         />
       </View>
@@ -187,6 +202,9 @@ const QualitativeDataScreen: React.FC = () => {
           distancias, obstáculos, condiciones de propagación sonora y cualquier factor que pueda 
           influir en la transmisión del ruido.
         </Text>
+        <Text style={styles.scrollHint}>
+          💡 Puede desplazarse dentro del campo de texto para escribir contenido extenso
+        </Text>
         
         <TextInput
           ref={sourceReceptorInputRef}
@@ -197,7 +215,8 @@ const QualitativeDataScreen: React.FC = () => {
           placeholderTextColor={COLORS.textSecondary}
           multiline
           textAlignVertical="top"
-          scrollEnabled
+          scrollEnabled={true}
+          nestedScrollEnabled={true}
           onFocus={() => handleInputFocus(sourceReceptorInputRef)}
         />
       </View>
@@ -268,7 +287,7 @@ const styles = StyleSheet.create({
     paddingTop: 8,
   },
   bottomSpacing: {
-    height: 300,
+    height: 400, // Increased to ensure sufficient space below text fields
   },
   title: {
     fontSize: 24,
@@ -332,9 +351,22 @@ const styles = StyleSheet.create({
   formSubtitle: {
     fontSize: 14,
     color: COLORS.textSecondary,
-    marginBottom: 16,
+    marginBottom: 12,
     lineHeight: 20,
     textAlign: 'justify',
+  },
+  scrollHint: {
+    fontSize: 12,
+    color: COLORS.primary,
+    marginBottom: 16,
+    fontStyle: 'italic',
+    textAlign: 'center',
+    backgroundColor: COLORS.background,
+    padding: 8,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    opacity: 0.8,
   },
   textArea: {
     backgroundColor: COLORS.surface,
@@ -344,10 +376,20 @@ const styles = StyleSheet.create({
     padding: 16,
     fontSize: 16,
     color: COLORS.text,
-    minHeight: 300,
-    maxHeight: 500,
+    height: 400, // Fixed height to prevent layout changes
     textAlign: 'justify',
     lineHeight: 22,
+    // Enable internal scrolling
+    textAlignVertical: 'top',
+    // Add subtle shadow to indicate scrollable area
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
   errorContainer: {
     flex: 1,

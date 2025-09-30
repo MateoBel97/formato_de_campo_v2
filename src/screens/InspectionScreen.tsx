@@ -4,6 +4,7 @@ import { useMeasurement } from '../context/MeasurementContext';
 import FormCheckbox from '../components/FormCheckbox';
 import FormButton from '../components/FormButton';
 import { COLORS } from '../constants';
+import { InspectionData } from '../types';
 
 interface InspectionScreenProps {
   onContinue?: () => void;
@@ -30,6 +31,11 @@ const InspectionScreen: React.FC<InspectionScreenProps> = ({ onContinue }) => {
           console.log('Inspection data saved successfully');
         } catch (error) {
           console.error('Error saving inspection data:', error);
+          Alert.alert(
+            'Error de Almacenamiento',
+            'No se pudo guardar la información de inspección. Por favor, intente nuevamente.',
+            [{ text: 'OK' }]
+          );
         }
       }, 100);
     } catch (error) {
@@ -121,7 +127,11 @@ const InspectionScreen: React.FC<InspectionScreenProps> = ({ onContinue }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={styles.scrollView} 
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={styles.content}>
           <View style={styles.header}>
             <Text style={styles.title}>Inspección Previa</Text>
@@ -137,9 +147,8 @@ const InspectionScreen: React.FC<InspectionScreenProps> = ({ onContinue }) => {
               <View key={item.key} style={styles.checkboxContainer}>
                 <FormCheckbox
                   label={item.label}
-                  value={state.currentFormat.inspection[item.key] || false}
+                  value={state.currentFormat?.inspection[item.key as keyof InspectionData] || false}
                   onValueChange={(value) => handleCheckboxChange(item.key, value)}
-                  style={styles.checkbox}
                 />
               </View>
             ))}

@@ -1,8 +1,16 @@
-import React, { useEffect } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, SafeAreaView, Alert } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, SafeAreaView, Alert, Modal, ActivityIndicator } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { Feather } from '@expo/vector-icons';
+import * as FileSystem from 'expo-file-system';
+import {
+  writeAsStringAsync,
+  deleteAsync,
+  getInfoAsync,
+  documentDirectory
+} from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import { useMeasurement } from '../context/MeasurementContext';
 import FormButton from '../components/FormButton';
 import { MeasurementFormat } from '../types';
@@ -10,12 +18,26 @@ import { RootStackParamList } from '../navigation/AppNavigator';
 import { COLORS } from '../constants';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { generateFileName } from '../utils/exportUtils';
+import { createPhotosZip, createZipFile, FileToZip } from '../utils/zipUtils';
 
 type SavedFormatsScreenNavigationProp = StackNavigationProp<RootStackParamList, 'SavedFormats'>;
+
+interface ExportOption {
+  id: 'all' | 'format' | 'photos';
+  title: string;
+  subtitle: string;
+  icon: string;
+  color: string;
+}
 
 const SavedFormatsScreen: React.FC = () => {
   const navigation = useNavigation<SavedFormatsScreenNavigationProp>();
   const { state, loadFormat, deleteFormat, loadSavedFormats } = useMeasurement();
+  const [selectedFormat, setSelectedFormat] = useState<MeasurementFormat | null>(null);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [loading, setLoading] = useState<string | null>(null);
+  const [exportProgress, setExportProgress] = useState<number>(0);
 
   useEffect(() => {
     loadSavedFormats();
@@ -44,6 +66,259 @@ const SavedFormatsScreen: React.FC = () => {
     );
   };
 
+  const handleShareFormat = (measurementFormat: MeasurementFormat) => {
+    setSelectedFormat(measurementFormat);
+    setShowExportModal(true);
+  };
+
+  const exportOptions: ExportOption[] = [
+    {
+      id: 'all',
+      title: 'Exportar Todo',
+      subtitle: 'Archivo ZIP con formato de campo + fotos organizadas',
+      icon: 'package',
+      color: COLORS.primary,
+    },
+    {
+      id: 'format',
+      title: 'Exportar JSON',
+      subtitle: 'Solo datos del formulario en archivo JSON',
+      icon: 'file-text',
+      color: COLORS.info,
+    },
+    {
+      id: 'photos',
+      title: 'Exportar Fotos',
+      subtitle: 'Archivo ZIP con fotos organizadas por punto y horario',
+      icon: 'camera',
+      color: COLORS.success,
+    },
+  ];
+
+  const exportFormat = async (measurementFormat: MeasurementFormat): Promise<string> => {
+    const fileName = generateFileName(measurementFormat, 'formato');
+    const jsonContent = JSON.stringify(measurementFormat, null, 2);
+    const fileUri = `${documentDirectory}${fileName}.json`;
+    
+    await writeAsStringAsync(fileUri, jsonContent);
+    return fileUri;
+  };
+
+  const exportPhotos = async (measurementFormat: MeasurementFormat): Promise<string> => {
+    if (!measurementFormat.photos.length) {
+      throw new Error('No hay fotos para exportar');
+    }
+
+    const baseName = generateFileName(measurementFormat, 'fotos');
+    const zipPath = `${documentDirectory}${baseName}.zip`;
+    
+    try {
+      await deleteAsync(zipPath, { idempotent: true });
+    } catch (error) {
+      console.warn('Could not delete existing ZIP file:', error);
+    }
+    
+    const photosForZip: Array<{ uri: string; pointName: string; schedule: string; index: number; timestamp: string }> = [];
+    
+    const photosByPointSchedule = measurementFormat.photos.reduce((acc, photo) => {
+      const key = `${photo.pointId}_${photo.schedule}`;
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(photo);
+      return acc;
+    }, {} as Record<string, typeof measurementFormat.photos>);
+
+    for (const [key, photos] of Object.entries(photosByPointSchedule)) {
+      const [pointId, schedule] = key.split('_');
+      const point = measurementFormat.measurementPoints.find(p => p.id === pointId);
+      const pointName = point?.name || `Punto_${pointId}`;
+      
+      for (let index = 0; index < photos.length; index++) {
+        const photo = photos[index];
+        
+        try {
+          const photoInfo = await getInfoAsync(photo.uri);
+          if (photoInfo.exists && photoInfo.size && photoInfo.size > 0) {
+            photosForZip.push({
+              uri: photo.uri,
+              pointName,
+              schedule,
+              index,
+              timestamp: photo.timestamp,
+            });
+          }
+        } catch (error) {
+          console.warn(`Error validating photo ${photo.uri}:`, error);
+        }
+      }
+    }
+
+    if (photosForZip.length === 0) {
+      throw new Error('No se encontraron fotos válidas para exportar');
+    }
+
+    await createPhotosZip(photosForZip, zipPath, (progress) => {
+      setExportProgress(progress * 100);
+    });
+    
+    return zipPath;
+  };
+
+  const exportAll = async (measurementFormat: MeasurementFormat): Promise<string> => {
+    const baseName = generateFileName(measurementFormat, 'completo');
+    const zipPath = `${documentDirectory}${baseName}.zip`;
+    
+    try {
+      await deleteAsync(zipPath, { idempotent: true });
+    } catch (error) {
+      console.warn('Could not delete existing ZIP file:', error);
+    }
+    
+    const filesToZip: FileToZip[] = [];
+
+    const jsonContent = JSON.stringify(measurementFormat, null, 2);
+    const tempJsonPath = `${documentDirectory}temp_formato_complete.json`;
+    await writeAsStringAsync(tempJsonPath, jsonContent);
+    filesToZip.push({
+      path: tempJsonPath,
+      name: 'formato_campo.json',
+    });
+
+    if (measurementFormat.photos.length > 0) {
+      const photosByPointSchedule = measurementFormat.photos.reduce((acc, photo) => {
+        const key = `${photo.pointId}_${photo.schedule}`;
+        if (!acc[key]) acc[key] = [];
+        acc[key].push(photo);
+        return acc;
+      }, {} as Record<string, typeof measurementFormat.photos>);
+
+      for (const [key, photos] of Object.entries(photosByPointSchedule)) {
+        const [pointId, schedule] = key.split('_');
+        const point = measurementFormat.measurementPoints.find(p => p.id === pointId);
+        const pointName = point?.name || `Punto_${pointId}`;
+        const scheduleName = schedule === 'diurnal' ? 'Diurno' : 'Nocturno';
+        const folderName = `fotos/${pointName}_${scheduleName}`;
+        
+        for (let index = 0; index < photos.length; index++) {
+          const photo = photos[index];
+          
+          try {
+            const photoInfo = await getInfoAsync(photo.uri);
+            if (photoInfo.exists && photoInfo.size && photoInfo.size > 0) {
+              const fileName = `foto_${index + 1}_${new Date(photo.timestamp).getTime()}.jpg`;
+              filesToZip.push({
+                path: photo.uri,
+                name: `${folderName}/${fileName}`,
+              });
+            }
+          } catch (error) {
+            console.warn(`Error validating photo ${photo.uri}:`, error);
+          }
+        }
+      }
+    }
+
+    const infoContent = `Exportación Completa - ${measurementFormat.generalInfo.company}
+Fecha: ${measurementFormat.generalInfo.date}
+Orden de Trabajo: ${measurementFormat.generalInfo.workOrder.type}-${measurementFormat.generalInfo.workOrder.number}-${measurementFormat.generalInfo.workOrder.year}
+
+Archivos incluidos:
+- formato_campo.json: Datos completos del formulario
+- fotos/: Carpeta con fotos organizadas por punto y horario
+
+Generado: ${new Date().toLocaleString('es-ES')}`;
+    
+    const tempInfoPath = `${documentDirectory}temp_info_complete.txt`;
+    await writeAsStringAsync(tempInfoPath, infoContent);
+    filesToZip.push({
+      path: tempInfoPath,
+      name: 'informacion.txt',
+    });
+
+    await createZipFile(filesToZip, zipPath, (progress) => {
+      setExportProgress(progress * 100);
+    });
+
+    try {
+      await deleteAsync(tempJsonPath, { idempotent: true });
+      await deleteAsync(tempInfoPath, { idempotent: true });
+    } catch (error) {
+      console.warn('Error cleaning up temporary files:', error);
+    }
+    
+    return zipPath;
+  };
+
+  const handleExport = async (optionId: 'all' | 'format' | 'photos') => {
+    if (!selectedFormat) return;
+
+    setLoading(optionId);
+    setExportProgress(0);
+    
+    try {
+      let fileToShare: string;
+      
+      switch (optionId) {
+        case 'all':
+          fileToShare = await exportAll(selectedFormat);
+          break;
+        case 'format':
+          fileToShare = await exportFormat(selectedFormat);
+          break;
+        case 'photos':
+          fileToShare = await exportPhotos(selectedFormat);
+          break;
+        default:
+          throw new Error('Opción de exportación no válida');
+      }
+
+      const fileInfo = await getInfoAsync(fileToShare);
+      if (!fileInfo.exists) {
+        throw new Error('El archivo exportado no se creó correctamente');
+      }
+
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        const mimeType = optionId === 'format' ? 'application/json' : 'application/zip';
+        const dialogTitle = optionId === 'all' 
+          ? 'Compartir exportación completa' 
+          : optionId === 'format' 
+            ? 'Compartir formato de campo'
+            : 'Compartir fotos';
+            
+        await Sharing.shareAsync(fileToShare, {
+          mimeType,
+          dialogTitle,
+        });
+      } else {
+        Alert.alert('Éxito', `Archivo exportado correctamente: ${fileToShare}`);
+      }
+      
+      setShowExportModal(false);
+    } catch (error: any) {
+      console.error('Error en exportación:', error);
+      
+      let errorMessage = 'No se pudo completar la exportación';
+      if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      Alert.alert('Error de Exportación', errorMessage, [
+        {
+          text: 'Reintentar',
+          onPress: () => handleExport(optionId),
+        },
+        {
+          text: 'Cancelar',
+          style: 'cancel',
+          onPress: () => setShowExportModal(false),
+        }
+      ]);
+    } finally {
+      setLoading(null);
+      setExportProgress(0);
+    }
+  };
+
   const renderFormatItem = ({ item }: { item: MeasurementFormat }) => {
     const { company, date, workOrder } = item.generalInfo;
     const formattedDate = format(new Date(date), 'dd/MM/yyyy', { locale: es });
@@ -58,7 +333,10 @@ const SavedFormatsScreen: React.FC = () => {
           <Text style={styles.companyName}>{company || 'Sin nombre'}</Text>
           <TouchableOpacity
             style={styles.deleteButton}
-            onPress={() => handleDeleteFormat(item)}
+            onPress={(e) => {
+              e.stopPropagation();
+              handleDeleteFormat(item);
+            }}
           >
             <Feather name="trash-2" size={18} color={COLORS.error} />
           </TouchableOpacity>
@@ -84,6 +362,19 @@ const SavedFormatsScreen: React.FC = () => {
             Actualizado: {format(new Date(item.updatedAt), 'dd/MM/yyyy HH:mm', { locale: es })}
           </Text>
           <Feather name="chevron-right" size={20} color={COLORS.textSecondary} />
+        </View>
+
+        <View style={styles.actionButtonsContainer}>
+          <TouchableOpacity
+            style={styles.shareButton}
+            onPress={(e) => {
+              e.stopPropagation();
+              handleShareFormat(item);
+            }}
+          >
+            <Feather name="share-2" size={16} color={COLORS.primary} />
+            <Text style={styles.shareButtonText}>Compartir</Text>
+          </TouchableOpacity>
         </View>
       </TouchableOpacity>
     );
@@ -118,13 +409,70 @@ const SavedFormatsScreen: React.FC = () => {
       </View>
 
       <FlatList
-        data={state.savedFormats}
+        data={state.savedFormats.sort((a, b) => new Date(b.createdAt || b.updatedAt).getTime() - new Date(a.createdAt || a.updatedAt).getTime())}
         renderItem={renderFormatItem}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContainer}
         ListEmptyComponent={renderEmptyState}
         showsVerticalScrollIndicator={false}
       />
+
+      <Modal
+        visible={showExportModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowExportModal(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Compartir Formato</Text>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => setShowExportModal(false)}
+                disabled={loading !== null}
+              >
+                <Feather name="x" size={24} color={COLORS.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalSubtitle}>
+              Selecciona qué información deseas compartir
+            </Text>
+
+            <View style={styles.exportOptionsContainer}>
+              {exportOptions.map((option) => (
+                <TouchableOpacity
+                  key={option.id}
+                  style={[styles.exportOptionCard, { borderLeftColor: option.color }]}
+                  onPress={() => handleExport(option.id)}
+                  disabled={loading !== null}
+                >
+                  <View style={styles.exportOptionContent}>
+                    <View style={[styles.exportIconContainer, { backgroundColor: option.color + '20' }]}>
+                      <Feather name={option.icon as any} size={20} color={option.color} />
+                    </View>
+                    <View style={styles.exportOptionText}>
+                      <Text style={styles.exportOptionTitle}>{option.title}</Text>
+                      <Text style={styles.exportOptionSubtitle}>{option.subtitle}</Text>
+                    </View>
+                    {loading === option.id ? (
+                      <View style={styles.exportLoadingContainer}>
+                        <ActivityIndicator size="small" color={option.color} />
+                        {(option.id === 'photos' || option.id === 'all') && exportProgress > 0 && (
+                          <Text style={styles.exportProgressText}>{Math.round(exportProgress)}%</Text>
+                        )}
+                      </View>
+                    ) : (
+                      <Feather name="arrow-right" size={16} color={COLORS.textSecondary} />
+                    )}
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -234,6 +582,102 @@ const styles = StyleSheet.create({
   },
   emptyButton: {
     paddingHorizontal: 32,
+  },
+  actionButtonsContainer: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
+  shareButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    backgroundColor: COLORS.primary + '15',
+    borderRadius: 6,
+    gap: 6,
+  },
+  shareButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.primary,
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: COLORS.text,
+  },
+  closeButton: {
+    padding: 4,
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    marginBottom: 20,
+  },
+  exportOptionsContainer: {
+    gap: 12,
+  },
+  exportOptionCard: {
+    backgroundColor: COLORS.background,
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    padding: 16,
+  },
+  exportOptionContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  exportIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  exportOptionText: {
+    flex: 1,
+  },
+  exportOptionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginBottom: 2,
+  },
+  exportOptionSubtitle: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    lineHeight: 16,
+  },
+  exportLoadingContainer: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  exportProgressText: {
+    fontSize: 10,
+    color: COLORS.textSecondary,
+    fontWeight: 'bold',
   },
 });
 

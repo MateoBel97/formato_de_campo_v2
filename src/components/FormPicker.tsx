@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Modal, FlatList } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Modal, FlatList, ViewStyle } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { COLORS } from '../constants';
 
@@ -10,31 +10,44 @@ interface PickerOption {
 
 interface FormPickerProps {
   label: string;
-  value: string;
+  value?: string;
+  selectedValue?: string;
   options: PickerOption[];
-  onSelect: (value: string) => void;
+  onSelect?: (value: string) => void;
+  onValueChange?: (value: string) => void;
   error?: string;
   required?: boolean;
   placeholder?: string;
   horizontal?: boolean;
+  style?: ViewStyle;
 }
 
 const FormPicker: React.FC<FormPickerProps> = ({
   label,
   value,
+  selectedValue,
   options,
   onSelect,
+  onValueChange,
   error,
   required = false,
   placeholder = 'Seleccionar...',
   horizontal = false,
+  style,
 }) => {
   const [modalVisible, setModalVisible] = useState(false);
 
-  const selectedOption = options?.find(option => option.value === value);
+  // Use selectedValue if provided, otherwise fallback to value
+  const currentValue = selectedValue || value;
+  const selectedOption = options?.find(option => option.value === currentValue);
 
   const handleSelect = (selectedValue: string) => {
-    onSelect(selectedValue);
+    // Call the appropriate callback
+    if (onValueChange) {
+      onValueChange(selectedValue);
+    } else if (onSelect) {
+      onSelect(selectedValue);
+    }
     setModalVisible(false);
   };
 
@@ -42,19 +55,19 @@ const FormPicker: React.FC<FormPickerProps> = ({
     <TouchableOpacity
       style={[
         styles.option,
-        item.value === value && styles.selectedOption,
+        item.value === currentValue && styles.selectedOption,
       ]}
       onPress={() => handleSelect(item.value)}
     >
       <Text
         style={[
           styles.optionText,
-          item.value === value && styles.selectedOptionText,
+          item.value === currentValue && styles.selectedOptionText,
         ]}
       >
         {item.label}
       </Text>
-      {item.value === value && (
+      {item.value === currentValue && (
         <Feather name="check" size={20} color={COLORS.primary} />
       )}
     </TouchableOpacity>
@@ -62,7 +75,7 @@ const FormPicker: React.FC<FormPickerProps> = ({
 
   if (horizontal) {
     return (
-      <View style={styles.horizontalContainer}>
+      <View style={[styles.horizontalContainer, style]}>
         <View style={styles.horizontalLabelContainer}>
           <Text style={styles.horizontalLabel}>{label}</Text>
           {required && <Text style={styles.required}>*</Text>}
@@ -81,10 +94,12 @@ const FormPicker: React.FC<FormPickerProps> = ({
                 styles.pickerText,
                 !selectedOption && styles.placeholderText,
               ]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
             >
               {selectedOption ? selectedOption.label : placeholder}
             </Text>
-            <Feather name="chevron-down" size={18} color={COLORS.textSecondary} />
+            <Feather name="chevron-down" size={10} color={COLORS.textSecondary} />
           </TouchableOpacity>
 
           {error && <Text style={styles.errorText}>{error}</Text>}
@@ -122,7 +137,7 @@ const FormPicker: React.FC<FormPickerProps> = ({
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, style]}>
       <View style={styles.labelContainer}>
         <Text style={styles.label}>{label}</Text>
         {required && <Text style={styles.required}>*</Text>}
@@ -140,10 +155,12 @@ const FormPicker: React.FC<FormPickerProps> = ({
             styles.pickerText,
             !selectedOption && styles.placeholderText,
           ]}
+          numberOfLines={1}
+          ellipsizeMode="tail"
         >
           {selectedOption ? selectedOption.label : placeholder}
         </Text>
-        <Feather name="chevron-down" size={20} color={COLORS.textSecondary} />
+        <Feather name="chevron-down" size={12} color={COLORS.textSecondary} />
       </TouchableOpacity>
 
       {error && <Text style={styles.errorText}>{error}</Text>}
@@ -211,7 +228,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.error,
   },
   pickerText: {
-    fontSize: 16,
+    fontSize: 14,
     color: COLORS.text,
     flex: 1,
   },
@@ -285,14 +302,16 @@ const styles = StyleSheet.create({
   },
   horizontalContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
+    alignItems: 'flex-start',
+    marginBottom: 0,
+    paddingTop: 8,
   },
   horizontalLabelContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 0.5,
-    paddingRight: 12,
+    paddingRight: 4,
+    paddingBottom: 8,
   },
   horizontalLabel: {
     fontSize: 14,
@@ -309,11 +328,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     borderWidth: 1,
     borderColor: COLORS.border,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
     backgroundColor: COLORS.surface,
-    minHeight: 40,
+    minHeight: 20,
   },
 });
 

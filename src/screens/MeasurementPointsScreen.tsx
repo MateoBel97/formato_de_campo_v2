@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, Alert, TouchableOpacity } from 'react-native';
+import React, { useState, useRef, useEffect } from 'react';
+import { View, Text, ScrollView, StyleSheet, Alert, TouchableOpacity, KeyboardAvoidingView, Platform, Keyboard, Dimensions } from 'react-native';
 import { Formik } from 'formik';
 import * as Yup from 'yup';
 import { Feather } from '@expo/vector-icons';
@@ -9,13 +9,14 @@ import FormButton from '../components/FormButton';
 import LocationPicker from '../components/LocationPicker';
 import { COLORS } from '../constants';
 import { MeasurementPoint } from '../types';
+import { isValidDMSFormat } from '../utils/numberUtils';
 
 const validationSchema = Yup.object({
   name: Yup.string().required('El nombre del punto es requerido'),
   coordinatesN: Yup.string()
-    .matches(/^\d+\.?\d*$/, 'Formato de coordenadas inválido'),
+    .test('is-dms-format', 'Formato DMS inválido (0°00.0\'00.00")', isValidDMSFormat),
   coordinatesW: Yup.string()
-    .matches(/^\d+\.?\d*$/, 'Formato de coordenadas inválido'),
+    .test('is-dms-format', 'Formato DMS inválido (0°00.0\'00.00")', isValidDMSFormat),
 });
 
 const MeasurementPointsScreen: React.FC = () => {
@@ -23,9 +24,70 @@ const MeasurementPointsScreen: React.FC = () => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const [editingPoint, setEditingPoint] = useState<MeasurementPoint | null>(null);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  
+  const scrollViewRef = useRef<ScrollView>(null);
+  const formContainerRef = useRef<View>(null);
+  const nameInputRef = useRef<View>(null);
 
   const currentFormat = state.currentFormat;
   const measurementPoints = currentFormat?.measurementPoints || [];
+
+  // Keyboard listeners
+  useEffect(() => {
+    const keyboardWillShow = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (e) => setKeyboardHeight(e.endCoordinates.height)
+    );
+    
+    const keyboardWillHide = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setKeyboardHeight(0)
+    );
+
+    return () => {
+      keyboardWillShow.remove();
+      keyboardWillHide.remove();
+    };
+  }, []);
+
+  // Function to scroll to form when it opens - always executes
+  const scrollToForm = () => {
+    if (scrollViewRef.current) {
+      setTimeout(() => {
+        if (formContainerRef.current) {
+          // Try to use measureInWindow for precise positioning
+          formContainerRef.current.measureInWindow((x, y, width, height) => {
+            if (y !== undefined && y > 0) {
+              // Position the form title at the top with some margin
+              const marginFromTop = 80; // Margin to show title clearly
+              const scrollPosition = Math.max(0, y - marginFromTop);
+              
+              scrollViewRef.current?.scrollTo({ 
+                y: scrollPosition, 
+                animated: true 
+              });
+            } else {
+              // Fallback: scroll to where the form typically appears
+              const approximateFormPosition = measurementPoints.length * 120 + 200; // Approximate position
+              scrollViewRef.current?.scrollTo({ 
+                y: approximateFormPosition, 
+                animated: true 
+              });
+            }
+          });
+        } else {
+          // Final fallback: scroll to where the form typically appears
+          const approximateFormPosition = measurementPoints.length * 120 + 200; // Approximate position
+          scrollViewRef.current?.scrollTo({ 
+            y: approximateFormPosition, 
+            animated: true 
+          });
+        }
+      }, 400); // Increase timeout to ensure form is fully rendered
+    }
+  };
+  
 
   const getInitialValues = () => {
     if (editingPoint) {
@@ -58,6 +120,7 @@ const MeasurementPointsScreen: React.FC = () => {
         updateMeasurementPoint(editingPoint.id, updatedPoint);
         await saveCurrentFormat();
         setEditingPoint(null);
+        setShowAddForm(false);
       } else {
         // Agregar nuevo punto
         const newPoint: MeasurementPoint = {
@@ -67,11 +130,16 @@ const MeasurementPointsScreen: React.FC = () => {
           coordinatesW: values.coordinatesW,
         };
 
-        addMeasurementPoint(newPoint);
-        await saveCurrentFormat();
-        setShowAddForm(false);
+        const saveSuccess = await addMeasurementPoint(newPoint);
+        if (saveSuccess) {
+          setShowAddForm(false);
+        } else {
+          Alert.alert('Advertencia de Guardado', 'El punto se agregó pero puede que no se haya guardado correctamente. Revisa la lista de puntos.');
+          setShowAddForm(false);
+        }
       }
     } catch (error) {
+      console.error('Error in handleSubmitPoint:', error);
       Alert.alert('Error', editingPoint ? 'No se pudo actualizar el punto de medición' : 'No se pudo agregar el punto de medición');
     } finally {
       setIsAdding(false);
@@ -102,6 +170,8 @@ const MeasurementPointsScreen: React.FC = () => {
   const handleEditPoint = (point: MeasurementPoint) => {
     setEditingPoint(point);
     setShowAddForm(false);
+    // Scroll to form after state update
+    setTimeout(scrollToForm, 150);
   };
 
   const renderPointItem = (point: MeasurementPoint, index: number) => (
@@ -164,8 +234,18 @@ const MeasurementPointsScreen: React.FC = () => {
   }
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-      <View style={styles.content}>
+    <View style={styles.container}>
+      <ScrollView 
+        ref={scrollViewRef}
+        style={styles.scrollContainer} 
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={[
+          styles.scrollContentContainer,
+          { paddingBottom: keyboardHeight > 0 ? keyboardHeight + 50 : 50 }
+        ]}
+      >
+        <View style={styles.content}>
         <View style={styles.header}>
           <Text style={styles.title}>Puntos de Medición</Text>
           <Text style={styles.subtitle}>
@@ -184,12 +264,16 @@ const MeasurementPointsScreen: React.FC = () => {
         {!showAddForm && !editingPoint ? (
           <FormButton
             title="Agregar Punto de Medición"
-            onPress={() => setShowAddForm(true)}
+            onPress={() => {
+              setShowAddForm(true);
+              // Scroll to form after state update
+              setTimeout(scrollToForm, 150);
+            }}
             size="large"
             style={styles.addButton}
           />
         ) : (
-          <View style={styles.addForm}>
+          <View ref={formContainerRef} style={styles.addForm}>
             <View style={styles.formHeader}>
               <Text style={styles.formTitle}>
                 {editingPoint ? 'Editar Punto de Medición' : 'Nuevo Punto de Medición'}
@@ -214,14 +298,17 @@ const MeasurementPointsScreen: React.FC = () => {
             >
               {({ values, errors, touched, handleChange, handleSubmit, setFieldValue, resetForm }) => (
                 <View>
-                  <FormInput
-                    label="Nombre del punto"
-                    value={values.name}
-                    onChangeText={handleChange('name')}
-                    error={touched.name && errors.name ? errors.name : undefined}
-                    placeholder="Ej: Punto 1, Entrada principal, etc."
-                    required
-                  />
+                  <View ref={nameInputRef}>
+                    <FormInput
+                      label="Nombre del punto"
+                      value={values.name}
+                      onChangeText={handleChange('name')}
+                      error={touched.name && errors.name ? errors.name : undefined}
+                      placeholder="Ej: Punto 1, Entrada principal, etc."
+                      required
+                      selectTextOnFocus={false}
+                    />
+                  </View>
 
                   <LocationPicker
                     coordinatesN={values.coordinatesN}
@@ -249,7 +336,7 @@ const MeasurementPointsScreen: React.FC = () => {
                     />
                     <FormButton
                       title={isAdding ? (editingPoint ? 'Actualizando...' : 'Agregando...') : (editingPoint ? 'Actualizar Punto' : 'Agregar Punto')}
-                      onPress={handleSubmit}
+                      onPress={() => handleSubmit()}
                       loading={isAdding}
                       style={styles.submitButton}
                     />
@@ -261,6 +348,7 @@ const MeasurementPointsScreen: React.FC = () => {
         )}
       </View>
     </ScrollView>
+    </View>
   );
 };
 
@@ -268,6 +356,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
+  },
+  scrollContainer: {
+    flex: 1,
+  },
+  scrollContentContainer: {
+    flexGrow: 1,
   },
   content: {
     padding: 16,

@@ -1,8 +1,13 @@
 import React from 'react';
 import { Dimensions } from 'react-native';
 import * as FileSystem from 'expo-file-system';
+import {
+  copyAsync,
+  deleteAsync,
+  documentDirectory
+} from 'expo-file-system/legacy';
 import { captureRef } from 'react-native-view-shot';
-import { createWatermarkedImage, formatTimestamp, formatCoordinates } from './imageUtils';
+import { createWatermarkedImageForExport, formatTimestamp, formatCoordinates } from './imageUtils';
 import { Photo } from '../types';
 
 export interface WatermarkedPhoto extends Photo {
@@ -65,10 +70,10 @@ const createWatermarkedImageFile = async (photo: Photo): Promise<string> => {
     
     // Create filename with metadata embedded
     const watermarkedFileName = `foto_${timestamp.getTime()}_${formattedDate.replace(/[\/\s:]/g, '_')}_${locationText.replace(/[°\s]/g, '_')}.jpg`;
-    const watermarkedPath = `${FileSystem.documentDirectory}temp_watermarked_${watermarkedFileName}`;
+    const watermarkedPath = `${documentDirectory}temp_watermarked_${watermarkedFileName}`;
     
     // Copy original file (for now - will be enhanced to add actual visual watermark)
-    await FileSystem.copyAsync({
+    await copyAsync({
       from: photo.uri,
       to: watermarkedPath,
     });
@@ -91,7 +96,7 @@ export const cleanupWatermarkedImages = async (photos: WatermarkedPhoto[]): Prom
   for (const photo of photos) {
     if (photo.watermarkedUri && photo.watermarkedUri !== photo.uri) {
       try {
-        await FileSystem.deleteAsync(photo.watermarkedUri, { idempotent: true });
+        await deleteAsync(photo.watermarkedUri, { idempotent: true });
       } catch (error) {
         console.warn(`Failed to cleanup watermarked image: ${photo.watermarkedUri}`, error);
       }

@@ -6,7 +6,9 @@ module.exports = function(api) {
       ['@babel/preset-typescript', { allowDeclareFields: true }]
     ],
     plugins: [
-      'react-native-reanimated/plugin',
+      ['react-native-reanimated/plugin', {
+        globals: ['__scanCodes']
+      }]
     ],
   };
 };

@@ -1,0 +1,96 @@
+========================================
+  FORMATO DE CAMPO V2 - INSTALADOR
+========================================
+
+REQUISITOS PREVIOS:
+-------------------
+Antes de ejecutar el instalador, asegúrate de tener instalado:
+
+1. Node.js (versión 18 o superior)
+   Descarga desde: https://nodejs.org/
+   Elige la versión LTS (recomendada)
+
+
+INSTRUCCIONES DE INSTALACIÓN:
+------------------------------
+
+PASO 1: Instalar dependencias
+   - Haz doble clic en: INSTALAR.bat
+   - Espera a que termine la instalación (puede tardar varios minutos)
+   - Si hay errores, lee los mensajes en pantalla
+
+PASO 2: Ejecutar la aplicación
+   - Haz doble clic en: EJECUTAR_APLICACION.bat
+   - La aplicación se abrirá automáticamente en tu navegador
+   - NO CIERRES la ventana negra mientras uses la aplicación
+
+
+SOLUCIÓN DE PROBLEMAS:
+----------------------
+
+❌ "Node.js no está instalado"
+   → Instala Node.js desde https://nodejs.org/
+   → Reinicia tu computadora después de instalarlo
+   → Ejecuta INSTALAR.bat nuevamente
+
+❌ "Las dependencias no están instaladas"
+   → Ejecuta INSTALAR.bat primero
+   → Si persiste, ejecuta INSTALAR.bat como Administrador
+     (clic derecho → Ejecutar como administrador)
+
+❌ "La instalación de dependencias falló"
+   → Verifica tu conexión a Internet
+   → Ejecuta INSTALAR.bat como Administrador
+   → Cierra otros programas que puedan estar usando Node.js
+   → Desactiva temporalmente el antivirus
+
+❌ La aplicación no abre en el navegador
+   → Espera 30 segundos después de ejecutar EJECUTAR_APLICACION.bat
+   → Abre manualmente: http://localhost:3000 en tu navegador
+   → Verifica que el puerto 3000 no esté siendo usado por otra aplicación
+
+❌ Errores al seleccionar fotos
+   → Usa navegadores modernos (Chrome, Edge, Firefox)
+   → Asegúrate de dar permisos de cámara si usas webcam
+
+
+ALMACENAMIENTO DE DATOS:
+------------------------
+Los datos de la aplicación se guardan en:
+  C:\Users\[TuUsuario]\Documents\Formato_Campo_V2\Data\
+
+Carpetas creadas:
+  - Formatos: Archivos JSON de mediciones
+  - Fotos: Fotografías tomadas o cargadas
+  - Exportaciones: Archivos exportados
+
+
+USO DE LA APLICACIÓN:
+---------------------
+1. Al ejecutar EJECUTAR_APLICACION.bat se abrirá el navegador
+2. Usa el menú lateral para navegar entre secciones
+3. Completa la información en cada sección
+4. Las fotos se guardan como datos en la aplicación
+5. Exporta tus resultados cuando termines
+6. Para cerrar: presiona Ctrl+C en la ventana negra o ciérrala
+
+
+CONTACTO Y SOPORTE:
+-------------------
+Si tienes problemas no listados aquí, verifica:
+- Que Node.js esté instalado correctamente
+- Que tengas conexión a Internet durante la instalación
+- Que tu antivirus no esté bloqueando npm
+
+
+NOTAS TÉCNICAS:
+---------------
+- La aplicación corre en modo desarrollo
+- El puerto por defecto es 3000
+- Las imágenes en Windows se guardan como data URLs en memoria
+- Compatible con Windows 10 y Windows 11
+
+
+========================================
+Versión 1.0.0
+========================================

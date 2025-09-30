@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, ScrollView, StyleSheet, Alert, Text } from 'react-native';
 import { Formik } from 'formik';
 import * as Yup from 'yup';
@@ -26,18 +26,66 @@ const validationSchema = Yup.object({
 const GeneralInfoScreen: React.FC = () => {
   const { state, updateGeneralInfo, saveCurrentFormat } = useMeasurement();
   const [isSaving, setIsSaving] = useState(false);
+  const [initialValues, setInitialValues] = useState<GeneralInfo | null>(null);
+  const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const currentFormat = state.currentFormat;
-  const initialValues: GeneralInfo = currentFormat?.generalInfo || {
-    company: '',
-    date: new Date().toISOString().split('T')[0],
-    workOrder: {
-      type: 'RUI',
-      number: '',
-      year: new Date().getFullYear().toString().slice(-2),
-    },
-    supervisor: '',
+
+  // Initialize form values only once
+  useEffect(() => {
+    if (currentFormat?.generalInfo && !initialValues) {
+      setInitialValues(currentFormat.generalInfo);
+    } else if (!currentFormat?.generalInfo && !initialValues) {
+      setInitialValues({
+        company: '',
+        date: new Date().toISOString().split('T')[0],
+        workOrder: {
+          type: 'RUI',
+          number: '',
+          year: new Date().getFullYear().toString().slice(-2),
+        },
+        supervisor: '',
+      });
+    }
+  }, [currentFormat?.generalInfo, initialValues]);
+
+  // Auto-save function with change detection
+  const autoSave = async (values: GeneralInfo) => {
+    // Check if values have actually changed from the initial values
+    if (!initialValues || JSON.stringify(values) === JSON.stringify(initialValues)) {
+      console.log('General info auto-save skipped: no changes detected');
+      return;
+    }
+
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
+    }
+
+    autoSaveTimeoutRef.current = setTimeout(async () => {
+      try {
+        updateGeneralInfo(values);
+        setTimeout(async () => {
+          try {
+            await saveCurrentFormat();
+            console.log('General info auto-saved successfully');
+          } catch (error) {
+            console.error('Error auto-saving general info:', error);
+          }
+        }, 100);
+      } catch (error) {
+        console.error('Error updating general info:', error);
+      }
+    }, 1000); // Save after 1 second of inactivity
   };
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleSubmit = async (values: GeneralInfo) => {
     try {
@@ -66,20 +114,30 @@ const GeneralInfoScreen: React.FC = () => {
   }
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+    <ScrollView 
+        style={styles.container} 
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
       <View style={styles.content}>
         <Text style={styles.title}>Información General</Text>
         <Text style={styles.subtitle}>
           Datos básicos del estudio de medición acústica
         </Text>
       </View>
+      {initialValues && (
       <Formik
         initialValues={initialValues}
         validationSchema={validationSchema}
         onSubmit={handleSubmit}
-        enableReinitialize
       >
-        {({ values, errors, touched, handleChange, handleSubmit, setFieldValue }) => (
+        {({ values, errors, touched, handleChange, handleSubmit, setFieldValue }) => {
+          // Auto-save when values change
+          useEffect(() => {
+            autoSave(values);
+          }, [values]);
+
+          return (
           <View style={styles.form}>
             <FormInput
               label="Nombre de la empresa"
@@ -126,7 +184,7 @@ const GeneralInfoScreen: React.FC = () => {
                         : undefined
                     }
                     keyboardType="numeric"
-                    placeholder="001"
+                    placeholder="000"
                     required
                   />
                 </View>
@@ -170,14 +228,23 @@ const GeneralInfoScreen: React.FC = () => {
 
             <FormButton
               title={isSaving ? 'Guardando...' : 'Guardar información'}
-              onPress={handleSubmit}
+              onPress={() => handleSubmit()}
               loading={isSaving}
               size="large"
               style={styles.submitButton}
             />
+            <View style={styles.bottomSpacing} />
           </View>
-        )}
+          );
+        }}
       </Formik>
+      )}
+      
+      {!initialValues && (
+        <View style={styles.content}>
+          <Text style={styles.subtitle}>Cargando información general...</Text>
+        </View>
+      )}
     </ScrollView>
   );
 };
@@ -233,6 +300,9 @@ const styles = StyleSheet.create({
   submitButton: {
     marginTop: 24,
     marginBottom: 32,
+  },
+  bottomSpacing: {
+    height: 200,
   },
   errorContainer: {
     flex: 1,

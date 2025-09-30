@@ -1,5 +1,14 @@
 import JSZip from 'jszip';
 import * as FileSystem from 'expo-file-system';
+import {
+  writeAsStringAsync,
+  deleteAsync,
+  getInfoAsync,
+  readAsStringAsync,
+  documentDirectory,
+  EncodingType
+} from 'expo-file-system/legacy';
+import { Platform } from 'react-native';
 import { createWatermarkedImageForExport } from './imageUtils';
 
 export interface FileToZip {
@@ -34,24 +43,34 @@ export const createZipFile = async (
       const globalIndex = batchStart + i;
       
       try {
-        // Check if file exists before reading
-        const fileInfo = await FileSystem.getInfoAsync(file.path);
-        if (!fileInfo.exists) {
-          console.warn(`File does not exist: ${file.path}`);
-          continue;
+        let fileContent: string;
+
+        // For web/Windows, handle data URLs differently
+        if ((Platform.OS === 'web' || Platform.OS === 'windows') && file.path.startsWith('data:')) {
+          // It's a data URL, extract base64 part
+          fileContent = file.path.split(',')[1];
+        } else {
+          // Check if file exists before reading (mobile only)
+          if (Platform.OS !== 'web' && Platform.OS !== 'windows') {
+            const fileInfo = await getInfoAsync(file.path);
+            if (!fileInfo.exists) {
+              console.warn(`File does not exist: ${file.path}`);
+              continue;
+            }
+          }
+
+          // Read file with error handling
+          fileContent = await readAsStringAsync(file.path, {
+            encoding: EncodingType.Base64,
+          });
         }
-        
-        // Read file with error handling
-        const fileContent = await FileSystem.readAsStringAsync(file.path, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-        
+
         // Check file content is valid
         if (!fileContent || fileContent.length === 0) {
           console.warn(`Empty or invalid file content: ${file.path}`);
           continue;
         }
-        
+
         // Add to ZIP with error handling
         zip.file(file.name, fileContent, { base64: true });
         
@@ -95,19 +114,25 @@ export const createZipFile = async (
     });
     
     if (onProgress) onProgress(0.95); // 95%
-    
-    // Write file with error handling
-    await FileSystem.writeAsStringAsync(outputPath, zipContent, {
-      encoding: FileSystem.EncodingType.Base64,
+
+    // For web, return the base64 content directly (will be handled by caller)
+    if (Platform.OS === 'web' || Platform.OS === 'windows') {
+      if (onProgress) onProgress(1.0); // 100%
+      return zipContent; // Return base64 content for web
+    }
+
+    // For mobile, write file with error handling
+    await writeAsStringAsync(outputPath, zipContent, {
+      encoding: EncodingType.Base64,
     });
-    
+
     if (onProgress) onProgress(1.0); // 100%
-    
+
     return outputPath;
     
   } catch (error) {
     console.error('Failed to generate or write ZIP file:', error);
-    throw new Error(`ZIP generation failed: ${error.message}`);
+    throw new Error(`ZIP generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 };
 
@@ -132,7 +157,7 @@ export const createPhotosZip = async (
       
       try {
         // Check if photo file exists
-        const photoInfo = await FileSystem.getInfoAsync(photo.uri);
+        const photoInfo = await getInfoAsync(photo.uri);
         if (!photoInfo.exists) {
           console.warn(`Photo file does not exist: ${photo.uri}`);
           continue;
@@ -150,8 +175,17 @@ export const createPhotosZip = async (
           location: photo.location || null,
         });
         
-        const folderName = `${photo.pointName}_${photo.schedule === 'diurnal' ? 'Diurno' : 'Nocturno'}`;
-        const fileName = `foto_${photo.index + 1}_con_metadatos.jpg`;
+        let folderName: string;
+        let fileName: string;
+        
+        if (photo.pointName === 'Croquis') {
+          folderName = 'Croquis';
+          fileName = `croquis_${photo.index + 1}_con_metadatos.jpg`;
+        } else {
+          folderName = `${photo.pointName}_${photo.schedule === 'diurnal' ? 'Diurno' : 'Nocturno'}`;
+          fileName = `foto_${photo.index + 1}_con_metadatos.jpg`;
+        }
+        
         const zipPath = `${folderName}/${fileName}`;
         
         filesToZip.push({
@@ -164,7 +198,7 @@ export const createPhotosZip = async (
         const infoZipPath = `${folderName}/${infoFileName}`;
         const infoPath = watermarkedUri.replace('.jpg', '_info.txt');
         
-        if (await FileSystem.getInfoAsync(infoPath.replace('export_foto_', 'export_info_'))) {
+        if (await getInfoAsync(infoPath.replace('export_foto_', 'export_info_'))) {
           filesToZip.push({
             path: infoPath.replace('export_foto_', 'export_info_'),
             name: infoZipPath,
@@ -175,8 +209,17 @@ export const createPhotosZip = async (
         console.warn(`Error processing photo ${photo.uri}:`, error);
         
         // Fallback: add original photo if watermarking fails
-        const folderName = `${photo.pointName}_${photo.schedule === 'diurnal' ? 'Diurno' : 'Nocturno'}`;
-        const fileName = `foto_${photo.index + 1}_original.jpg`;
+        let folderName: string;
+        let fileName: string;
+        
+        if (photo.pointName === 'Croquis') {
+          folderName = 'Croquis';
+          fileName = `croquis_${photo.index + 1}_original.jpg`;
+        } else {
+          folderName = `${photo.pointName}_${photo.schedule === 'diurnal' ? 'Diurno' : 'Nocturno'}`;
+          fileName = `foto_${photo.index + 1}_original.jpg`;
+        }
+        
         const zipPath = `${folderName}/${fileName}`;
         
         filesToZip.push({
@@ -205,8 +248,8 @@ FORMATO DE ARCHIVOS:
 - info_foto_X.txt: Archivo con metadatos detallados
 `;
     
-    const tempInfoPath = `${FileSystem.documentDirectory}temp_photos_info.txt`;
-    await FileSystem.writeAsStringAsync(tempInfoPath, infoText);
+    const tempInfoPath = `${documentDirectory}temp_photos_info.txt`;
+    await writeAsStringAsync(tempInfoPath, infoText);
     
     filesToZip.push({
       path: tempInfoPath,
@@ -224,7 +267,7 @@ FORMATO DE ARCHIVOS:
     
     // Clean up temporary file
     try {
-      await FileSystem.deleteAsync(tempInfoPath, { idempotent: true });
+      await deleteAsync(tempInfoPath, { idempotent: true });
     } catch (error) {
       console.warn('Failed to delete temporary info file:', error);
     }
@@ -233,6 +276,6 @@ FORMATO DE ARCHIVOS:
     
   } catch (error) {
     console.error('Error in createPhotosZip:', error);
-    throw new Error(`Photos ZIP creation failed: ${error.message}`);
+    throw new Error(`Photos ZIP creation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 };

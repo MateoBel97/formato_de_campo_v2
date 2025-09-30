@@ -1,21 +1,44 @@
 import React, { useState } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  ScrollView, 
-  TouchableOpacity, 
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
   Alert,
-  ActivityIndicator 
+  ActivityIndicator,
+  Platform
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system';
+import {
+  writeAsStringAsync,
+  deleteAsync,
+  getInfoAsync,
+  documentDirectory
+} from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { useMeasurement } from '../context/MeasurementContext';
 import { COLORS } from '../constants';
-import { MeasurementFormat } from '../types';
+import { MeasurementFormat, CalibrationPhoto } from '../types';
 import { generateFileName, createDirectoryIfNotExists, cleanupTempDirectory, copyFileWithErrorHandling } from '../utils/exportUtils';
 import { createPhotosZip, createZipFile, FileToZip } from '../utils/zipUtils';
+
+// Helper function to download files in web browser
+const downloadFileInBrowser = (content: string | Blob, fileName: string, mimeType: string) => {
+  const blob = typeof content === 'string'
+    ? new Blob([content], { type: mimeType })
+    : content;
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
 
 interface ExportOption {
   id: 'all' | 'format' | 'photos';
@@ -29,6 +52,153 @@ const ExportScreen: React.FC = () => {
   const { state } = useMeasurement();
   const [loading, setLoading] = useState<string | null>(null);
   const [zipProgress, setZipProgress] = useState<number>(0);
+
+  // Helper function to collect all calibration photos from measurement results
+  const collectCalibrationPhotos = (format: MeasurementFormat) => {
+    const calibrationPhotos: Array<{
+      photo: CalibrationPhoto;
+      pointName: string;
+      schedule: string;
+      measurementType: string;
+      photoType: 'PRE' | 'POST';
+      intervalIndex?: number;
+      direction?: string;
+    }> = [];
+
+    // Get all measurement results
+    format.measurementResults.forEach((result) => {
+      const point = format.measurementPoints.find(p => p.id === result.pointId);
+      const pointName = point?.name || `Punto_${result.pointId}`;
+      const scheduleName = result.schedule === 'diurnal' ? 'Diurno' : 'Nocturno';
+
+      // Process emission measurements
+      if (result.emission) {
+        // Emission intervals
+        result.emission.emission.data.forEach((interval, index) => {
+          if (interval.calibrationPrePhoto) {
+            calibrationPhotos.push({
+              photo: interval.calibrationPrePhoto,
+              pointName,
+              schedule: scheduleName,
+              measurementType: 'Emision',
+              photoType: 'PRE',
+              intervalIndex: index,
+            });
+          }
+          if (interval.calibrationPostPhoto) {
+            calibrationPhotos.push({
+              photo: interval.calibrationPostPhoto,
+              pointName,
+              schedule: scheduleName,
+              measurementType: 'Emision',
+              photoType: 'POST',
+              intervalIndex: index,
+            });
+          }
+        });
+
+        // Residual intervals
+        result.emission.residual.data.forEach((interval, index) => {
+          if (interval.calibrationPrePhoto) {
+            calibrationPhotos.push({
+              photo: interval.calibrationPrePhoto,
+              pointName,
+              schedule: scheduleName,
+              measurementType: 'Residual',
+              photoType: 'PRE',
+              intervalIndex: index,
+            });
+          }
+          if (interval.calibrationPostPhoto) {
+            calibrationPhotos.push({
+              photo: interval.calibrationPostPhoto,
+              pointName,
+              schedule: scheduleName,
+              measurementType: 'Residual',
+              photoType: 'POST',
+              intervalIndex: index,
+            });
+          }
+        });
+      }
+
+      // Process ambient measurements
+      if (result.ambient) {
+        const directions = ['N', 'S', 'E', 'W', 'V'];
+        directions.forEach((direction) => {
+          const prePhotoKey = `calibrationPre${direction}Photo` as keyof typeof result.ambient;
+          const postPhotoKey = `calibrationPost${direction}Photo` as keyof typeof result.ambient;
+
+          if (result.ambient![prePhotoKey]) {
+            calibrationPhotos.push({
+              photo: result.ambient![prePhotoKey] as CalibrationPhoto,
+              pointName,
+              schedule: scheduleName,
+              measurementType: 'Ambiental',
+              photoType: 'PRE',
+              direction,
+            });
+          }
+          if (result.ambient![postPhotoKey]) {
+            calibrationPhotos.push({
+              photo: result.ambient![postPhotoKey] as CalibrationPhoto,
+              pointName,
+              schedule: scheduleName,
+              measurementType: 'Ambiental',
+              photoType: 'POST',
+              direction,
+            });
+          }
+        });
+      }
+
+      // Process immission measurements
+      if (result.immission) {
+        if (result.immission.calibrationPrePhoto) {
+          calibrationPhotos.push({
+            photo: result.immission.calibrationPrePhoto,
+            pointName,
+            schedule: scheduleName,
+            measurementType: 'Inmision',
+            photoType: 'PRE',
+          });
+        }
+        if (result.immission.calibrationPostPhoto) {
+          calibrationPhotos.push({
+            photo: result.immission.calibrationPostPhoto,
+            pointName,
+            schedule: scheduleName,
+            measurementType: 'Inmision',
+            photoType: 'POST',
+          });
+        }
+      }
+
+      // Process sonometry measurements
+      if (result.sonometry) {
+        if (result.sonometry.calibrationPrePhoto) {
+          calibrationPhotos.push({
+            photo: result.sonometry.calibrationPrePhoto,
+            pointName,
+            schedule: scheduleName,
+            measurementType: 'Sonometria',
+            photoType: 'PRE',
+          });
+        }
+        if (result.sonometry.calibrationPostPhoto) {
+          calibrationPhotos.push({
+            photo: result.sonometry.calibrationPostPhoto,
+            pointName,
+            schedule: scheduleName,
+            measurementType: 'Sonometria',
+            photoType: 'POST',
+          });
+        }
+      }
+    });
+
+    return calibrationPhotos;
+  };
 
   const exportOptions: ExportOption[] = [
     {
@@ -57,12 +227,19 @@ const ExportScreen: React.FC = () => {
 
   const exportFormat = async (): Promise<string> => {
     if (!state.currentFormat) throw new Error('No hay formato activo');
-    
+
     const fileName = generateFileName(state.currentFormat, 'formato');
     const jsonContent = JSON.stringify(state.currentFormat, null, 2);
-    const fileUri = `${FileSystem.documentDirectory}${fileName}.json`;
-    
-    await FileSystem.writeAsStringAsync(fileUri, jsonContent);
+
+    // For web, download directly using browser API
+    if (Platform.OS === 'web' || Platform.OS === 'windows') {
+      downloadFileInBrowser(jsonContent, `${fileName}.json`, 'application/json');
+      return `${fileName}.json`; // Return filename for success message
+    }
+
+    // For mobile, use file system
+    const fileUri = `${documentDirectory}${fileName}.json`;
+    await writeAsStringAsync(fileUri, jsonContent);
     return fileUri;
   };
 
@@ -71,60 +248,106 @@ const ExportScreen: React.FC = () => {
       throw new Error('No hay fotos para exportar');
     }
 
-    // Check available storage space before starting
-    const diskInfo = await FileSystem.getFreeDiskStorageAsync();
-    const approximateSize = state.currentFormat.photos.length * 2 * 1024 * 1024; // Assume 2MB per photo
-    
-    if (diskInfo < approximateSize * 2) { // Need 2x space for processing
-      throw new Error('No hay suficiente espacio de almacenamiento para exportar las fotos');
+    const baseName = generateFileName(state.currentFormat, 'fotos');
+    const zipPath = `${documentDirectory}${baseName}.zip`;
+
+    // Clean up any existing ZIP file (mobile only)
+    if (Platform.OS !== 'web' && Platform.OS !== 'windows') {
+      try {
+        await deleteAsync(zipPath, { idempotent: true });
+      } catch (error) {
+        console.warn('Could not delete existing ZIP file:', error);
+      }
     }
 
-    const baseName = generateFileName(state.currentFormat, 'fotos');
-    const zipPath = `${FileSystem.documentDirectory}${baseName}.zip`;
-    
-    // Clean up any existing ZIP file
-    try {
-      await FileSystem.deleteAsync(zipPath, { idempotent: true });
-    } catch (error) {
-      console.warn('Could not delete existing ZIP file:', error);
-    }
-    
-    // Preparar fotos para ZIP con validación
-    const photosForZip: Array<{ uri: string; pointName: string; schedule: string; index: number; timestamp: string }> = [];
-    
-    // Organizar fotos por punto y horario
-    const photosByPointSchedule = state.currentFormat.photos.reduce((acc, photo) => {
+    // Preparar fotos para ZIP
+    const photosForZip: Array<{ uri: string; pointName: string; schedule: string; index: number; timestamp: string; location?: { latitude: number; longitude: number } | null }> = [];
+
+    // Separar fotos por tipo
+    const measurementPhotos = state.currentFormat.photos.filter(photo => photo.type === 'measurement');
+    const croquisPhotos = state.currentFormat.photos.filter(photo => photo.type === 'croquis');
+
+    // Organizar fotos de medición por punto y horario
+    const photosByPointSchedule = measurementPhotos.reduce((acc, photo) => {
       const key = `${photo.pointId}_${photo.schedule}`;
       if (!acc[key]) acc[key] = [];
       acc[key].push(photo);
       return acc;
-    }, {} as Record<string, typeof state.currentFormat.photos>);
+    }, {} as Record<string, typeof measurementPhotos>);
 
-    // Preparar array para ZIP con validación de archivos
+    // Preparar array para ZIP
     for (const [key, photos] of Object.entries(photosByPointSchedule)) {
       const [pointId, schedule] = key.split('_');
       const point = state.currentFormat!.measurementPoints.find(p => p.id === pointId);
       const pointName = point?.name || `Punto_${pointId}`;
-      
+
       for (let index = 0; index < photos.length; index++) {
         const photo = photos[index];
-        
-        // Validate photo file exists before adding to queue
+
+        // For web, skip validation (data URLs are already in memory)
+        if (Platform.OS === 'web' || Platform.OS === 'windows') {
+          photosForZip.push({
+            uri: photo.uri,
+            pointName,
+            schedule,
+            index,
+            timestamp: photo.timestamp,
+            location: photo.location,
+          });
+        } else {
+          // Validate photo file exists before adding to queue (mobile only)
+          try {
+            const photoInfo = await getInfoAsync(photo.uri);
+            if (photoInfo.exists && photoInfo.size && photoInfo.size > 0) {
+              photosForZip.push({
+                uri: photo.uri,
+                pointName,
+                schedule,
+                index,
+                timestamp: photo.timestamp,
+                location: photo.location,
+              });
+            } else {
+              console.warn(`Skipping invalid photo: ${photo.uri}`);
+            }
+          } catch (error) {
+            console.warn(`Error validating photo ${photo.uri}:`, error);
+          }
+        }
+      }
+    }
+
+    // Agregar fotos de croquis
+    for (let index = 0; index < croquisPhotos.length; index++) {
+      const photo = croquisPhotos[index];
+
+      // For web, skip validation
+      if (Platform.OS === 'web' || Platform.OS === 'windows') {
+        photosForZip.push({
+          uri: photo.uri,
+          pointName: 'Croquis',
+          schedule: 'general',
+          index,
+          timestamp: photo.timestamp,
+          location: photo.location,
+        });
+      } else {
         try {
-          const photoInfo = await FileSystem.getInfoAsync(photo.uri);
+          const photoInfo = await getInfoAsync(photo.uri);
           if (photoInfo.exists && photoInfo.size && photoInfo.size > 0) {
             photosForZip.push({
               uri: photo.uri,
-              pointName,
-              schedule,
+              pointName: 'Croquis',
+              schedule: 'general',
               index,
               timestamp: photo.timestamp,
+              location: photo.location,
             });
           } else {
-            console.warn(`Skipping invalid photo: ${photo.uri}`);
+            console.warn(`Skipping invalid croquis photo: ${photo.uri}`);
           }
         } catch (error) {
-          console.warn(`Error validating photo ${photo.uri}:`, error);
+          console.warn(`Error validating croquis photo ${photo.uri}:`, error);
         }
       }
     }
@@ -133,56 +356,79 @@ const ExportScreen: React.FC = () => {
       throw new Error('No se encontraron fotos válidas para exportar');
     }
 
-    // Crear ZIP con progreso y manejo de memoria mejorado
-    await createPhotosZip(photosForZip, zipPath, (progress) => {
+    // Crear ZIP con progreso
+    const result = await createPhotosZip(photosForZip, zipPath, (progress) => {
       setZipProgress(progress * 100);
     });
-    
-    return zipPath;
+
+    // For web, download the base64 ZIP
+    if (Platform.OS === 'web' || Platform.OS === 'windows') {
+      // Convert base64 to blob and download
+      const byteCharacters = atob(result);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'application/zip' });
+
+      downloadFileInBrowser(blob, `${baseName}.zip`, 'application/zip');
+      return `${baseName}.zip`;
+    }
+
+    return result;
   };
 
   const exportAll = async (): Promise<string> => {
     if (!state.currentFormat) throw new Error('No hay formato activo');
 
-    // Check available storage space before starting
-    const approximatePhotoSize = state.currentFormat.photos.length * 2 * 1024 * 1024; // 2MB per photo
-    const approximateTotalSize = approximatePhotoSize + (1024 * 1024); // Add 1MB for JSON and overhead
-    
-    const diskInfo = await FileSystem.getFreeDiskStorageAsync();
-    if (diskInfo < approximateTotalSize * 2) { // Need 2x space for processing
-      throw new Error('No hay suficiente espacio de almacenamiento para la exportación completa');
+    const baseName = generateFileName(state.currentFormat, 'completo');
+    const zipPath = `${documentDirectory}${baseName}.zip`;
+
+    // Clean up any existing ZIP file (mobile only)
+    if (Platform.OS !== 'web' && Platform.OS !== 'windows') {
+      try {
+        await deleteAsync(zipPath, { idempotent: true });
+      } catch (error) {
+        console.warn('Could not delete existing ZIP file:', error);
+      }
     }
 
-    const baseName = generateFileName(state.currentFormat, 'completo');
-    const zipPath = `${FileSystem.documentDirectory}${baseName}.zip`;
-    
-    // Clean up any existing ZIP file
-    try {
-      await FileSystem.deleteAsync(zipPath, { idempotent: true });
-    } catch (error) {
-      console.warn('Could not delete existing ZIP file:', error);
-    }
-    
     const filesToZip: FileToZip[] = [];
 
-    // 1. Crear archivo JSON temporal
+    // 1. Crear archivo JSON - for web, add directly to ZIP without file system
     const jsonContent = JSON.stringify(state.currentFormat, null, 2);
-    const tempJsonPath = `${FileSystem.documentDirectory}temp_formato_complete.json`;
-    await FileSystem.writeAsStringAsync(tempJsonPath, jsonContent);
-    filesToZip.push({
-      path: tempJsonPath,
-      name: 'formato_campo.json',
-    });
 
-    // 2. Agregar fotos organizadas por carpetas con validación
-    if (state.currentFormat.photos.length > 0) {
-      // Organizar fotos por punto y horario
-      const photosByPointSchedule = state.currentFormat.photos.reduce((acc, photo) => {
+    if (Platform.OS === 'web' || Platform.OS === 'windows') {
+      // For web, we'll add JSON as base64 directly
+      const base64Json = btoa(unescape(encodeURIComponent(jsonContent)));
+      filesToZip.push({
+        path: `data:application/json;base64,${base64Json}`,
+        name: 'formato_campo.json',
+      });
+    } else {
+      // For mobile, write to temp file
+      const tempJsonPath = `${documentDirectory}temp_formato_complete.json`;
+      await writeAsStringAsync(tempJsonPath, jsonContent);
+      filesToZip.push({
+        path: tempJsonPath,
+        name: 'formato_campo.json',
+      });
+    }
+
+    // Separar fotos por tipo para toda la función
+    const measurementPhotos = state.currentFormat.photos.filter(photo => photo.type === 'measurement');
+    const croquisPhotos = state.currentFormat.photos.filter(photo => photo.type === 'croquis');
+
+    // 2. Agregar fotos del registro fotográfico organizadas por carpetas con validación
+    if (measurementPhotos.length > 0) {
+      // Organizar fotos de medición por punto y horario
+      const photosByPointSchedule = measurementPhotos.reduce((acc, photo) => {
         const key = `${photo.pointId}_${photo.schedule}`;
         if (!acc[key]) acc[key] = [];
         acc[key].push(photo);
         return acc;
-      }, {} as Record<string, typeof state.currentFormat.photos>);
+      }, {} as Record<string, typeof measurementPhotos>);
 
       // Agregar cada foto al ZIP con validación
       for (const [key, photos] of Object.entries(photosByPointSchedule)) {
@@ -194,64 +440,225 @@ const ExportScreen: React.FC = () => {
         
         for (let index = 0; index < photos.length; index++) {
           const photo = photos[index];
-          
-          try {
-            // Validate photo file exists and has valid size
-            const photoInfo = await FileSystem.getInfoAsync(photo.uri);
-            if (photoInfo.exists && photoInfo.size && photoInfo.size > 0) {
-              const fileName = `foto_${index + 1}_${new Date(photo.timestamp).getTime()}.jpg`;
-              filesToZip.push({
-                path: photo.uri,
-                name: `${folderName}/${fileName}`,
-              });
-            } else {
-              console.warn(`Skipping invalid photo in complete export: ${photo.uri}`);
+
+          // For web, skip validation
+          if (Platform.OS === 'web' || Platform.OS === 'windows') {
+            const fileName = `foto_${index + 1}_${new Date(photo.timestamp).getTime()}.jpg`;
+            filesToZip.push({
+              path: photo.uri,
+              name: `${folderName}/${fileName}`,
+            });
+          } else {
+            try {
+              // Validate photo file exists and has valid size (mobile only)
+              const photoInfo = await getInfoAsync(photo.uri);
+              if (photoInfo.exists && photoInfo.size && photoInfo.size > 0) {
+                const fileName = `foto_${index + 1}_${new Date(photo.timestamp).getTime()}.jpg`;
+                filesToZip.push({
+                  path: photo.uri,
+                  name: `${folderName}/${fileName}`,
+                });
+              } else {
+                console.warn(`Skipping invalid photo in complete export: ${photo.uri}`);
+              }
+            } catch (error) {
+              console.warn(`Error validating photo in complete export ${photo.uri}:`, error);
             }
-          } catch (error) {
-            console.warn(`Error validating photo in complete export ${photo.uri}:`, error);
           }
         }
       }
     }
 
-    const validPhotosCount = filesToZip.length - 1; // Subtract 1 for JSON file
+    // 3. Agregar fotos de calibración organizadas en carpeta Calibraciones
+    const calibrationPhotos = collectCalibrationPhotos(state.currentFormat);
+    let validCalibrationPhotosCount = 0;
 
-    // 3. Crear archivo de información
+    if (calibrationPhotos.length > 0) {
+      for (const calibPhoto of calibrationPhotos) {
+        // For web, skip validation
+        if (Platform.OS === 'web' || Platform.OS === 'windows') {
+          // Create folder structure: Calibraciones/PointName_Schedule/MeasurementType/
+          let folderPath = `Calibraciones/${calibPhoto.pointName}_${calibPhoto.schedule}/${calibPhoto.measurementType}`;
+
+          // Add additional path elements based on measurement type
+          if (calibPhoto.intervalIndex !== undefined) {
+            folderPath += `/Intervalo_${calibPhoto.intervalIndex + 1}`;
+          }
+          if (calibPhoto.direction) {
+            folderPath += `/Direccion_${calibPhoto.direction}`;
+          }
+
+          // Create filename with descriptive information
+          let fileName = `Calibracion_${calibPhoto.photoType}`;
+          if (calibPhoto.intervalIndex !== undefined) {
+            fileName += `_Intervalo${calibPhoto.intervalIndex + 1}`;
+          }
+          if (calibPhoto.direction) {
+            fileName += `_${calibPhoto.direction}`;
+          }
+          fileName += '_' + new Date(calibPhoto.photo.timestamp).getTime() + '.jpg';
+
+          filesToZip.push({
+            path: calibPhoto.photo.uri,
+            name: `${folderPath}/${fileName}`,
+          });
+
+          validCalibrationPhotosCount++;
+        } else {
+          try {
+            // Validate calibration photo file exists and has valid size (mobile only)
+            const photoInfo = await getInfoAsync(calibPhoto.photo.uri);
+            if (photoInfo.exists && photoInfo.size && photoInfo.size > 0) {
+              // Create folder structure: Calibraciones/PointName_Schedule/MeasurementType/
+              let folderPath = `Calibraciones/${calibPhoto.pointName}_${calibPhoto.schedule}/${calibPhoto.measurementType}`;
+
+              // Add additional path elements based on measurement type
+              if (calibPhoto.intervalIndex !== undefined) {
+                folderPath += `/Intervalo_${calibPhoto.intervalIndex + 1}`;
+              }
+              if (calibPhoto.direction) {
+                folderPath += `/Direccion_${calibPhoto.direction}`;
+              }
+
+              // Create filename with descriptive information
+              let fileName = `Calibracion_${calibPhoto.photoType}`;
+              if (calibPhoto.intervalIndex !== undefined) {
+                fileName += `_Intervalo${calibPhoto.intervalIndex + 1}`;
+              }
+              if (calibPhoto.direction) {
+                fileName += `_${calibPhoto.direction}`;
+              }
+              fileName += '_' + new Date(calibPhoto.photo.timestamp).getTime() + '.jpg';
+
+              filesToZip.push({
+                path: calibPhoto.photo.uri,
+                name: `${folderPath}/${fileName}`,
+              });
+
+              validCalibrationPhotosCount++;
+            } else {
+              console.warn(`Skipping invalid calibration photo in complete export: ${calibPhoto.photo.uri}`);
+            }
+          } catch (error) {
+            console.warn(`Error validating calibration photo in complete export ${calibPhoto.photo.uri}:`, error);
+          }
+        }
+      }
+    }
+
+    // 4. Agregar fotos de croquis
+    let validCroquisPhotosCount = 0;
+    if (croquisPhotos.length > 0) {
+      for (let index = 0; index < croquisPhotos.length; index++) {
+        const photo = croquisPhotos[index];
+
+        // For web, skip validation
+        if (Platform.OS === 'web' || Platform.OS === 'windows') {
+          const fileName = `croquis_${index + 1}_${new Date(photo.timestamp).getTime()}.jpg`;
+          filesToZip.push({
+            path: photo.uri,
+            name: `Croquis/${fileName}`,
+          });
+
+          validCroquisPhotosCount++;
+        } else {
+          try {
+            // Validate croquis photo file exists and has valid size (mobile only)
+            const photoInfo = await getInfoAsync(photo.uri);
+            if (photoInfo.exists && photoInfo.size && photoInfo.size > 0) {
+              const fileName = `croquis_${index + 1}_${new Date(photo.timestamp).getTime()}.jpg`;
+              filesToZip.push({
+                path: photo.uri,
+                name: `Croquis/${fileName}`,
+              });
+
+              validCroquisPhotosCount++;
+            } else {
+              console.warn(`Skipping invalid croquis photo in complete export: ${photo.uri}`);
+            }
+          } catch (error) {
+            console.warn(`Error validating croquis photo in complete export ${photo.uri}:`, error);
+          }
+        }
+      }
+    }
+
+    const validPhotosCount = filesToZip.length - 1 - validCalibrationPhotosCount - validCroquisPhotosCount; // Subtract 1 for JSON file, calibration photos, and croquis photos
+
+    // 5. Crear archivo de información
     const infoContent = `Exportación Completa - ${state.currentFormat.generalInfo.company}
 Fecha: ${state.currentFormat.generalInfo.date}
 Orden de Trabajo: ${state.currentFormat.generalInfo.workOrder.type}-${state.currentFormat.generalInfo.workOrder.number}-${state.currentFormat.generalInfo.workOrder.year}
 
 Archivos incluidos:
 - formato_campo.json: Datos completos del formulario
-- fotos/: Carpeta con fotos organizadas por punto y horario
-- Total de fotos válidas: ${validPhotosCount}
-${state.currentFormat.photos.length !== validPhotosCount ? `- Fotos originales: ${state.currentFormat.photos.length}` : ''}
+- fotos/: Carpeta con fotos del registro fotográfico organizadas por punto y horario
+- Calibraciones/: Carpeta con fotos de calibración organizadas por punto, horario e intervalo
+- Croquis/: Carpeta con fotos del croquis del área de medición
+- Total de fotos del registro válidas: ${validPhotosCount}
+${measurementPhotos.length !== validPhotosCount ? `- Fotos del registro originales: ${measurementPhotos.length}` : ''}
+- Total de fotos de calibración válidas: ${validCalibrationPhotosCount}
+${calibrationPhotos.length !== validCalibrationPhotosCount ? `- Fotos de calibración originales: ${calibrationPhotos.length}` : ''}
+- Total de fotos de croquis válidas: ${validCroquisPhotosCount}
+${croquisPhotos.length !== validCroquisPhotosCount ? `- Fotos de croquis originales: ${croquisPhotos.length}` : ''}
 
-Estructura de carpetas por punto y horario de medición.
+Estructura de carpetas:
+- fotos/: Organizadas por punto y horario de medición
+- Calibraciones/: Organizadas por punto, horario, tipo de medición e intervalo
+- Croquis/: Croquis o planos del área de medición
+  
 Generado: ${new Date().toLocaleString('es-ES')}
 `;
     
-    const tempInfoPath = `${FileSystem.documentDirectory}temp_info_complete.txt`;
-    await FileSystem.writeAsStringAsync(tempInfoPath, infoContent);
-    filesToZip.push({
-      path: tempInfoPath,
-      name: 'informacion.txt',
-    });
+    // Add info file
+    if (Platform.OS === 'web' || Platform.OS === 'windows') {
+      // For web, add as base64 directly
+      const base64Info = btoa(unescape(encodeURIComponent(infoContent)));
+      filesToZip.push({
+        path: `data:text/plain;base64,${base64Info}`,
+        name: 'informacion.txt',
+      });
+    } else {
+      // For mobile, write to temp file
+      const tempInfoPath = `${documentDirectory}temp_info_complete.txt`;
+      await writeAsStringAsync(tempInfoPath, infoContent);
+      filesToZip.push({
+        path: tempInfoPath,
+        name: 'informacion.txt',
+      });
+    }
 
-    // 4. Crear ZIP con progreso
-    await createZipFile(filesToZip, zipPath, (progress) => {
+    // 5. Crear ZIP con progreso
+    const result = await createZipFile(filesToZip, zipPath, (progress) => {
       setZipProgress(progress * 100);
     });
 
-    // 5. Limpiar archivos temporales
+    // 6. For web, download the ZIP
+    if (Platform.OS === 'web' || Platform.OS === 'windows') {
+      // Convert base64 to blob and download
+      const byteCharacters = atob(result);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'application/zip' });
+
+      downloadFileInBrowser(blob, `${baseName}.zip`, 'application/zip');
+      return `${baseName}.zip`;
+    }
+
+    // 7. Limpiar archivos temporales (mobile only)
+    const tempJsonPath = `${documentDirectory}temp_formato_complete.json`;
+    const tempInfoPath = `${documentDirectory}temp_info_complete.txt`;
     try {
       await FileSystem.deleteAsync(tempJsonPath, { idempotent: true });
       await FileSystem.deleteAsync(tempInfoPath, { idempotent: true });
     } catch (error) {
       console.warn('Error cleaning up temporary files:', error);
     }
-    
-    return zipPath;
+
+    return result;
   };
 
   const handleExport = async (optionId: 'all' | 'format' | 'photos') => {
@@ -285,30 +692,35 @@ Generado: ${new Date().toLocaleString('es-ES')}
         }
       })();
       
-      fileToShare = await Promise.race([exportPromise, exportTimeout]);
+      fileToShare = await Promise.race([exportPromise, exportTimeout]) as string;
 
-      // Verify file was created successfully
-      const fileInfo = await FileSystem.getInfoAsync(fileToShare);
-      if (!fileInfo.exists) {
-        throw new Error('El archivo exportado no se creó correctamente');
-      }
-
-      // Compartir archivo
-      const canShare = await Sharing.isAvailableAsync();
-      if (canShare) {
-        const mimeType = optionId === 'format' ? 'application/json' : 'application/zip';
-        const dialogTitle = optionId === 'all' 
-          ? 'Compartir exportación completa' 
-          : optionId === 'format' 
-            ? 'Compartir formato de campo'
-            : 'Compartir fotos';
-            
-        await Sharing.shareAsync(fileToShare, {
-          mimeType,
-          dialogTitle,
-        });
+      // For web, we already downloaded the file, just show success message
+      if (Platform.OS === 'web' || Platform.OS === 'windows') {
+        Alert.alert('Éxito', `Archivo descargado correctamente: ${fileToShare}`);
       } else {
-        Alert.alert('Éxito', `Archivo exportado correctamente: ${fileToShare}`);
+        // For mobile, verify file was created successfully
+        const fileInfo = await getInfoAsync(fileToShare);
+        if (!fileInfo.exists) {
+          throw new Error('El archivo exportado no se creó correctamente');
+        }
+
+        // Compartir archivo
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          const mimeType = optionId === 'format' ? 'application/json' : 'application/zip';
+          const dialogTitle = optionId === 'all'
+            ? 'Compartir exportación completa'
+            : optionId === 'format'
+              ? 'Compartir formato de campo'
+              : 'Compartir fotos';
+
+          await Sharing.shareAsync(fileToShare, {
+            mimeType,
+            dialogTitle,
+          });
+        } else {
+          Alert.alert('Éxito', `Archivo exportado correctamente: ${fileToShare}`);
+        }
       }
       
     } catch (error: any) {
@@ -346,10 +758,13 @@ Generado: ${new Date().toLocaleString('es-ES')}
 
   if (!state.currentFormat) {
     return (
-      <ScrollView style={styles.container}>
+      <ScrollView 
+        style={styles.container} 
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={styles.content}>
           <View style={styles.emptyState}>
-            <Feather name="file-x" size={48} color={COLORS.textSecondary} />
+            <Feather name="file" size={48} color={COLORS.textSecondary} />
             <Text style={styles.emptyTitle}>No hay formato activo</Text>
             <Text style={styles.emptySubtitle}>
               Crea un nuevo formato o carga uno existente para poder exportar
@@ -361,7 +776,10 @@ Generado: ${new Date().toLocaleString('es-ES')}
   }
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView 
+      style={styles.container} 
+      keyboardShouldPersistTaps="handled"
+    >
       <View style={styles.content}>
         <View style={styles.header}>
           <Text style={styles.title}>Exportar Datos</Text>

@@ -4,7 +4,13 @@
 
 ## Descripción General
 
-Aplicación para almacenar, ver y editar información acerca de mediciones acústicas que se realicen bajo diferentes métodos y condiciones.
+Aplicación multiplataforma para almacenar, ver y editar información acerca de mediciones acústicas que se realicen bajo diferentes métodos y condiciones.
+
+**Plataformas soportadas:**
+- 📱 Android
+- 🍎 iOS
+- 💻 Windows
+- 🌐 Web
 
 ## Lineamientos Generales de un Estudio de Ruido
 
@@ -195,7 +201,7 @@ La aplicación debe exportar los resultados, para que el usuario pueda compartir
 
 ## Requerimientos de funcionamiento
 
-- Compatible con Android y iOS.
+- Compatible con Android, iOS, Windows y Web.
 - La pantalla principal debe mostrar al inicio dos opciones:
     - Crear nuevo formato.
     - Ver lista de formatos guardados.
@@ -204,8 +210,32 @@ La aplicación debe exportar los resultados, para que el usuario pueda compartir
 - En la visualización de los formatos guardados se debe mostrar una lista con cada uno de los archivos JSON guardados internamente. Debe permitir la selección de cualquier archivo y abrir la vista de edición del formato con la información previamente guardada.
 - Permitir la exportación del archivo JSON.
 
+## Características Específicas de Windows
+
+### Almacenamiento
+- **Ubicación**: Los datos se guardan en `Documents/Formato_Campo_V2/Data/`
+- **Estructura**:
+  - `Formatos/`: Archivos JSON de mediciones
+  - `Fotos/`: Imágenes de mediciones y croquis
+  - `Exportaciones/`: Archivos exportados
+- **Migración**: Automática desde AsyncStorage al iniciar en Windows
+
+### Manejo de Fotos
+- **Webcam**: Soporte para cámara web del equipo
+- **Explorador de Archivos**: Selección desde cualquier carpeta del sistema
+- **Formatos Soportados**: JPG, PNG, JPEG, GIF, BMP
+- **Etiquetas Adaptativas**:
+  - "Archivos" en lugar de "Galería"
+  - "Webcam" en lugar de "Cámara"
+
+### Ejecutable
+- **Desarrollo**: `npm run windows`
+- **Producción**: `npm run build:windows`
+- **Instalación**: Ver `WINDOWS_SETUP.md`
+
 ## Interfaz gráfica
 
 - Para cada página o pestaña agrega un ícono apropiado.
 - Usa una tonalidad verde.
 - Debe tener un menú lateral comprimible donde se vean cada una de las pestañas del formato actual en forma de íconos. Cuando está comprimido debe mostrar solamente los íconos. Cuando está desplegado debe mostrar íconos y texto.
+- **Adaptación de Plataforma**: Los controles se adaptan automáticamente según la plataforma (Windows/Web vs Móvil).

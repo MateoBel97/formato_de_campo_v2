@@ -6,12 +6,12 @@ export interface MeasurementPoint {
 }
 
 export interface WeatherCondition {
-  windSpeed: { initial: number; final: number };
+  windSpeed: { initial: number | string; final: number | string };
   windDirection: { initial: string; final: string };
-  temperature: { initial: number; final: number };
-  humidity: { initial: number; final: number };
-  atmosphericPressure: { initial: number; final: number };
-  precipitation: { initial: number; final: number };
+  temperature: { initial: number | string; final: number | string };
+  humidity: { initial: number | string; final: number | string };
+  atmosphericPressure: { initial: number | string; final: number | string };
+  precipitation: { initial: number | string; final: number | string };
 }
 
 export interface WeatherConditions {
@@ -43,9 +43,13 @@ export interface TechnicalInfo {
 export interface EmissionInterval {
   soundLevel: number;
   percentile90: number;
-  fileNumber: number;
+  fileNumber: string;
   initialTime: string;
   finalTime: string;
+  calibrationPre?: string;
+  calibrationPost?: string;
+  calibrationPrePhoto?: CalibrationPhoto;
+  calibrationPostPhoto?: CalibrationPhoto;
 }
 
 export interface EmissionResults {
@@ -62,32 +66,70 @@ export interface EmissionResults {
 export interface AmbientResults {
   levelN: string;
   fileNumberN: string;
+  initialTimeN: string;
+  finalTimeN: string;
+  calibrationPreN: string;
+  calibrationPostN: string;
+  calibrationPreNPhoto?: CalibrationPhoto;
+  calibrationPostNPhoto?: CalibrationPhoto;
   levelS: string;
   fileNumberS: string;
+  initialTimeS: string;
+  finalTimeS: string;
+  calibrationPreS: string;
+  calibrationPostS: string;
+  calibrationPreSPhoto?: CalibrationPhoto;
+  calibrationPostSPhoto?: CalibrationPhoto;
   levelE: string;
   fileNumberE: string;
+  initialTimeE: string;
+  finalTimeE: string;
+  calibrationPreE: string;
+  calibrationPostE: string;
+  calibrationPreEPhoto?: CalibrationPhoto;
+  calibrationPostEPhoto?: CalibrationPhoto;
   levelW: string;
   fileNumberW: string;
+  initialTimeW: string;
+  finalTimeW: string;
+  calibrationPreW: string;
+  calibrationPostW: string;
+  calibrationPreWPhoto?: CalibrationPhoto;
+  calibrationPostWPhoto?: CalibrationPhoto;
   levelV: string;
   fileNumberV: string;
-  initialTime: string;
-  finalTime: string;
+  initialTimeV: string;
+  finalTimeV: string;
+  calibrationPreV: string;
+  calibrationPostV: string;
+  calibrationPreVPhoto?: CalibrationPhoto;
+  calibrationPostVPhoto?: CalibrationPhoto;
 }
 
 export interface ImmissionResults {
   levelLeq: string;
   levelLmax: string;
   levelLmin: string;
+  fileNumber: string;
   initialTime: string;
   finalTime: string;
+  calibrationPre: string;
+  calibrationPost: string;
+  calibrationPrePhoto?: CalibrationPhoto;
+  calibrationPostPhoto?: CalibrationPhoto;
 }
 
 export interface SonometryResults {
   levelLeq: string;
   levelLmax: string;
   levelLmin: string;
+  fileNumber: string;
   initialTime: string;
   finalTime: string;
+  calibrationPre: string;
+  calibrationPost: string;
+  calibrationPrePhoto?: CalibrationPhoto;
+  calibrationPostPhoto?: CalibrationPhoto;
 }
 
 export interface MeasurementResults {
@@ -109,6 +151,16 @@ export interface ExternalEvent {
   duration: number;
 }
 
+export interface CalibrationPhoto {
+  id: string;
+  uri: string;
+  timestamp: string;
+  location: {
+    latitude: number;
+    longitude: number;
+  } | null;
+}
+
 export interface Photo {
   id: string;
   uri: string;
@@ -117,8 +169,9 @@ export interface Photo {
     latitude: number;
     longitude: number;
   } | null;
-  pointId: string;
-  schedule: 'diurnal' | 'nocturnal';
+  pointId?: string; // Optional for Croquis photos
+  schedule?: 'diurnal' | 'nocturnal'; // Optional for Croquis photos
+  type: 'measurement' | 'croquis'; // New field to distinguish photo types
 }
 
 export interface GeneralInfo {
@@ -171,6 +224,8 @@ export interface AppState {
   savedFormats: MeasurementFormat[];
   isLoading: boolean;
   error: string | null;
+  selectedPointForNavigation: string | null;
+  selectedScheduleForNavigation: ScheduleType | null;
 }
 
 export type AppAction = 
@@ -189,10 +244,12 @@ export type AppAction =
   | { type: 'ADD_EXTERNAL_EVENT'; payload: ExternalEvent }
   | { type: 'DELETE_EXTERNAL_EVENT'; payload: string }
   | { type: 'ADD_PHOTO'; payload: Photo }
+  | { type: 'UPDATE_PHOTO'; payload: { id: string; photo: Partial<Photo> } }
   | { type: 'DELETE_PHOTO'; payload: string }
   | { type: 'LOAD_SAVED_FORMATS'; payload: MeasurementFormat[] }
   | { type: 'SAVE_FORMAT'; payload: MeasurementFormat }
   | { type: 'DELETE_FORMAT'; payload: string }
   | { type: 'SET_LOADING'; payload: boolean }
   | { type: 'SET_ERROR'; payload: string | null }
-  | { type: 'CLEAR_CURRENT_FORMAT' };
+  | { type: 'CLEAR_CURRENT_FORMAT' }
+  | { type: 'SET_NAVIGATION_SELECTION'; payload: { pointId: string; schedule: ScheduleType } };

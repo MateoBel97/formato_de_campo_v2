@@ -14,6 +14,7 @@ interface DatePickerProps {
   required?: boolean;
   mode?: 'date' | 'time';
   placeholder?: string;
+  horizontal?: boolean;
 }
 
 const DatePicker: React.FC<DatePickerProps> = ({
@@ -24,6 +25,7 @@ const DatePicker: React.FC<DatePickerProps> = ({
   required = false,
   mode = 'date',
   placeholder = 'Seleccionar...',
+  horizontal = false,
 }) => {
   const [show, setShow] = useState(false);
   
@@ -251,15 +253,15 @@ const DatePicker: React.FC<DatePickerProps> = ({
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.labelContainer}>
+    <View style={horizontal ? styles.horizontalContainer : styles.container}>
+      <View style={horizontal ? styles.horizontalLabelContainer : styles.labelContainer}>
         <Text style={styles.label}>{label}</Text>
         {required && <Text style={styles.required}>*</Text>}
       </View>
 
       <TouchableOpacity
         style={[
-          styles.dateButton,
+          horizontal ? styles.horizontalDateButton : styles.dateButton,
           error && styles.dateButtonError,
         ]}
         onPress={showDatePicker}
@@ -323,9 +325,19 @@ const styles = StyleSheet.create({
   container: {
     marginBottom: 16,
   },
+  horizontalContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
   labelContainer: {
     flexDirection: 'row',
     marginBottom: 4,
+  },
+  horizontalLabelContainer: {
+    flexDirection: 'row',
+    minWidth: 100,
   },
   label: {
     fontSize: 16,
@@ -346,6 +358,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 12,
     backgroundColor: COLORS.surface,
+  },
+  horizontalDateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    backgroundColor: COLORS.surface,
+    flex: 1,
+    marginLeft: 12,
   },
   dateButtonError: {
     borderColor: COLORS.error,

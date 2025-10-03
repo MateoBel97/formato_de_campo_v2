@@ -5,12 +5,14 @@ import { useMeasurement } from '../context/MeasurementContext';
 import FormPicker from '../components/FormPicker';
 import FormInput from '../components/FormInput';
 import TimePicker from '../components/TimePicker';
+import DatePicker from '../components/DatePicker';
 import CalibrationPhotoButton from '../components/CalibrationPhotoButton';
+import FormSeparator from '../components/FormSeparator';
 import { COLORS, EMISSION_INTERVALS, RESIDUAL_INTERVALS } from '../constants';
 import { MeasurementType, CalibrationPhoto, ScheduleType } from '../types';
 
 const MeasurementResultsScreen: React.FC = () => {
-  const { state, updateMeasurementResultData, saveCurrentFormat, setNavigationSelection } = useMeasurement();
+  const { state, updateMeasurementResultData, updateMeasurementResultDate, saveCurrentFormat, setNavigationSelection } = useMeasurement();
   const [selectedPoint, setSelectedPoint] = useState('');
   const [selectedSchedule, setSelectedSchedule] = useState('');
   const [selectedMeasurementType, setSelectedMeasurementType] = useState('emission');
@@ -59,9 +61,39 @@ const MeasurementResultsScreen: React.FC = () => {
       // Find the point index from the pointId
       const pointIndex = measurementPoints.findIndex(point => point.id === state.selectedPointForNavigation);
       if (pointIndex !== -1) {
-        console.log('Using navigation selection:', pointIndex, state.selectedScheduleForNavigation);
+        console.log('Using navigation selection:', {
+          pointIndex,
+          schedule: state.selectedScheduleForNavigation,
+          interval: state.selectedIntervalForNavigation,
+          isResidual: state.selectedIsResidualForNavigation
+        });
+
         setSelectedPoint(pointIndex.toString());
         setSelectedSchedule(state.selectedScheduleForNavigation);
+
+        // Handle interval navigation for emission type
+        if (technicalInfo?.measurementType === 'emission' && state.selectedIntervalForNavigation !== null) {
+          if (state.selectedIsResidualForNavigation) {
+            // Navigate to residual interval
+            setSelectedMeasurementType('residual');
+            if (typeof state.selectedIntervalForNavigation === 'number') {
+              setSelectedResidualInterval(state.selectedIntervalForNavigation);
+            }
+          } else {
+            // Navigate to emission interval
+            setSelectedMeasurementType('emission');
+            if (typeof state.selectedIntervalForNavigation === 'number') {
+              setSelectedEmissionInterval(state.selectedIntervalForNavigation);
+            }
+          }
+        }
+
+        // Handle direction navigation for ambient type
+        if (technicalInfo?.measurementType === 'ambient' && state.selectedIntervalForNavigation !== null) {
+          if (typeof state.selectedIntervalForNavigation === 'string') {
+            setSelectedAmbientDirection(state.selectedIntervalForNavigation);
+          }
+        }
 
         // Clear the navigation selection after using it
         setNavigationSelection('', 'diurnal');
@@ -149,9 +181,10 @@ const MeasurementResultsScreen: React.FC = () => {
     
     endHour = endHour % 12;
     if (endHour === 0) endHour = 12;
-    
+
+    const formattedHour = endHour.toString().padStart(2, '0');
     const formattedMinute = endMinute.toString().padStart(2, '0');
-    return `${endHour}:${formattedMinute} ${endPeriod}`;
+    return `${formattedHour}:${formattedMinute} ${endPeriod}`;
   };
 
   // Get measurement data from context
@@ -160,6 +193,34 @@ const MeasurementResultsScreen: React.FC = () => {
     return currentFormat.measurementResults.find(
       result => result.pointId === pointId && result.schedule === schedule && result.type === type
     );
+  };
+
+  // Get current measurement date or default to study date
+  const getCurrentMeasurementDate = () => {
+    if (!selectedPoint || !selectedSchedule || !currentFormat) {
+      return currentFormat?.generalInfo.date || '';
+    }
+
+    const pointId = currentFormat.measurementPoints[parseInt(selectedPoint)]?.id;
+    if (!pointId) return currentFormat.generalInfo.date || '';
+
+    // Use technicalInfo.measurementType or 'emission' as fallback
+    const measurementType = technicalInfo?.measurementType || 'emission';
+    const result = getMeasurementResult(pointId, selectedSchedule as 'diurnal' | 'nocturnal', measurementType);
+    return result?.date || currentFormat.generalInfo.date || '';
+  };
+
+  // Update measurement date
+  const updateCurrentMeasurementDate = (date: string) => {
+    if (!selectedPoint || !selectedSchedule || !currentFormat) return;
+
+    const pointId = currentFormat.measurementPoints[parseInt(selectedPoint)]?.id;
+    if (!pointId) return;
+
+    // Use technicalInfo.measurementType or 'emission' as fallback
+    const measurementType = technicalInfo?.measurementType || 'emission';
+    updateMeasurementResultDate(pointId, selectedSchedule as 'diurnal' | 'nocturnal', measurementType, date);
+    triggerAutoSave();
   };
 
   // Get measurement data for current selection
@@ -177,6 +238,8 @@ const MeasurementResultsScreen: React.FC = () => {
         calibrationPost: '',
         calibrationPrePhoto: null,
         calibrationPostPhoto: null,
+        verificationPre: '',
+        verificationPost: '',
       };
     }
 
@@ -196,6 +259,8 @@ const MeasurementResultsScreen: React.FC = () => {
         calibrationPost: '',
         calibrationPrePhoto: null,
         calibrationPostPhoto: null,
+        verificationPre: '',
+        verificationPost: '',
       };
     }
 
@@ -218,6 +283,8 @@ const MeasurementResultsScreen: React.FC = () => {
         calibrationPost: '',
         calibrationPrePhoto: null,
         calibrationPostPhoto: null,
+        verificationPre: '',
+        verificationPost: '',
       };
     }
 
@@ -231,6 +298,8 @@ const MeasurementResultsScreen: React.FC = () => {
       calibrationPost: intervalData.calibrationPost || '',
       calibrationPrePhoto: intervalData.calibrationPrePhoto || null,
       calibrationPostPhoto: intervalData.calibrationPostPhoto || null,
+      verificationPre: intervalData.verificationPre || '',
+      verificationPost: intervalData.verificationPost || '',
     };
     
     console.log('getCurrentMeasurement returning:', returnData);
@@ -386,6 +455,8 @@ const MeasurementResultsScreen: React.FC = () => {
         finalTime: '',
         calibrationPre: '',
         calibrationPost: '',
+        verificationPre: '',
+        verificationPost: '',
       });
     }
 
@@ -459,6 +530,8 @@ const MeasurementResultsScreen: React.FC = () => {
         finalTime: '',
         calibrationPre: '',
         calibrationPost: '',
+        verificationPre: '',
+        verificationPost: '',
       });
     }
 
@@ -486,9 +559,17 @@ const MeasurementResultsScreen: React.FC = () => {
       intervalData.calibrationPre = value;
     } else if (field === 'calibrationPost') {
       intervalData.calibrationPost = value;
+    } else if (field === 'verificationPre') {
+      console.log('Saving verificationPre:', value);
+      intervalData.verificationPre = value;
+    } else if (field === 'verificationPost') {
+      console.log('Saving verificationPost:', value);
+      intervalData.verificationPost = value;
     }
-    
+
     console.log('After update - intervalData:', intervalData);
+    console.log('IntervalData verificationPre:', intervalData.verificationPre);
+    console.log('IntervalData verificationPost:', intervalData.verificationPost);
 
     // Clear temporary value after saving
     const tempKey = `${type}_${intervalIndex}_${field}`;
@@ -565,7 +646,7 @@ const MeasurementResultsScreen: React.FC = () => {
     if (type === 'emission') {
       const currentData = [...emissionData.emission.data]; // Preserve existing data
       emissionData.emission.intervals = count;
-      
+
       // Adjust data array length - preserve existing data when extending
       if (currentData.length < count) {
         // Add new empty intervals only for the missing slots
@@ -578,6 +659,8 @@ const MeasurementResultsScreen: React.FC = () => {
             finalTime: '',
             calibrationPre: '',
             calibrationPost: '',
+            verificationPre: '',
+            verificationPost: '',
           });
         }
       }
@@ -586,7 +669,7 @@ const MeasurementResultsScreen: React.FC = () => {
     } else {
       const currentData = [...emissionData.residual.data]; // Preserve existing data
       emissionData.residual.intervals = count;
-      
+
       // Adjust data array length - preserve existing data when extending
       if (currentData.length < count) {
         // Add new empty intervals only for the missing slots
@@ -599,6 +682,8 @@ const MeasurementResultsScreen: React.FC = () => {
             finalTime: '',
             calibrationPre: '',
             calibrationPost: '',
+            verificationPre: '',
+            verificationPost: '',
           });
         }
       }
@@ -760,16 +845,26 @@ const MeasurementResultsScreen: React.FC = () => {
 
   const renderEmissionForm = () => {
     if (!selectedPoint || !selectedSchedule) return null;
-    
+
     const intervals = getIntervalsCount(selectedMeasurementType);
     const selectedInterval = selectedMeasurementType === 'emission' ? selectedEmissionInterval : selectedResidualInterval;
     const setSelectedInterval = selectedMeasurementType === 'emission' ? setSelectedEmissionInterval : setSelectedResidualInterval;
     const intervalOptions = selectedMeasurementType === 'emission' ? EMISSION_INTERVALS : RESIDUAL_INTERVALS;
     const placeholder = selectedMeasurementType === 'emission' ? '1' : '0';
 
+    const currentDate = getCurrentMeasurementDate();
+    console.log('[EMISSION FORM] Rendering with date:', currentDate);
+
     return (
       <View style={styles.formContainer}>
         <View style={styles.subsectionContainer}>
+          <DatePicker
+            label="Fecha"
+            value={currentDate}
+            onChange={updateCurrentMeasurementDate}
+            horizontal
+          />
+
           <FormPicker
             label="Número de intervalos"
             selectedValue={intervals.toString()}
@@ -825,16 +920,25 @@ const MeasurementResultsScreen: React.FC = () => {
     const intervalOptions = selectedMeasurementType === 'emission' ? EMISSION_INTERVALS : RESIDUAL_INTERVALS;
     const placeholder = selectedMeasurementType === 'emission' ? '1' : '0';
 
+    const currentDate = getCurrentMeasurementDate();
+
     return (
       <View style={styles.formContainer}>
         <View style={styles.subsectionContainer}>
+          <DatePicker
+            label="Fecha"
+            value={currentDate}
+            onChange={updateCurrentMeasurementDate}
+            horizontal
+          />
+
           <FormPicker
             label="Número de intervalos"
             selectedValue={intervals.toString()}
             onValueChange={(value) => {
               const numIntervals = parseInt(value);
               saveIntervalsCount(selectedMeasurementType, numIntervals);
-              
+
               // Adjust selected interval if necessary
               if (selectedInterval >= numIntervals) {
                 setSelectedInterval(Math.max(0, numIntervals - 1));
@@ -847,7 +951,7 @@ const MeasurementResultsScreen: React.FC = () => {
           />
 
           {renderIntervalButtons(intervals, selectedInterval, setSelectedInterval)}
-          
+
           {intervals > 0 && renderCurrentIntervalFields(selectedMeasurementType, selectedInterval)}
         </View>
       </View>
@@ -911,6 +1015,13 @@ const MeasurementResultsScreen: React.FC = () => {
     return (
       <View style={styles.formContainer}>
         <View style={styles.subsectionContainer}>
+          <DatePicker
+            label="Fecha"
+            value={getCurrentMeasurementDate()}
+            onChange={updateCurrentMeasurementDate}
+            horizontal
+          />
+
           {renderDirectionButtons()}
           {renderAmbientIntervalFields(selectedAmbientDirection)}
         </View>
@@ -1015,17 +1126,32 @@ const MeasurementResultsScreen: React.FC = () => {
           onTimeChange={(time) => saveAmbientMeasurementData(direction, 'endTime', time)}
           horizontal
         />
-        
+
+        <FormSeparator />
+
+        <FormInput
+          label="Verificación PRE (dB)"
+          value={getTempInputValue(`ambient_${direction}_verificationPre`, measurement.verificationPre)}
+          onChangeText={(text) => updateTempInputValue(`ambient_${direction}_verificationPre`, text)}
+          onBlur={() => {
+            const value = getTempInputValue(`ambient_${direction}_verificationPre`, measurement.verificationPre);
+            saveAmbientMeasurementData(direction, 'verificationPre', value);
+          }}
+          keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'numeric'}
+          placeholder="0.0"
+          horizontal
+        />
+
         <FormInput
           label="Cal PRE (dB)"
-          value={getTempInputValue(`ambient_${direction}_calibrationPre`, measurement.calibrationPre)}
+          value={getTempInputValue(`ambient_${direction}_0_calibrationPre`, measurement.calibrationPre)}
           onChangeText={(text) => {
             const filtered = filterCalibrationInput(text);
-            updateTempInputValue(`ambient_${direction}_calibrationPre`, filtered);
+            updateTempInputValue(`ambient_${direction}_0_calibrationPre`, filtered);
           }}
           onBlur={() => {
-            const preValue = getTempInputValue(`ambient_${direction}_calibrationPre`, measurement.calibrationPre);
-            const postValue = getTempInputValue(`ambient_${direction}_calibrationPost`, measurement.calibrationPost);
+            const preValue = getTempInputValue(`ambient_${direction}_0_calibrationPre`, measurement.calibrationPre);
+            const postValue = getTempInputValue(`ambient_${direction}_0_calibrationPost`, measurement.calibrationPost);
             saveAmbientMeasurementData(direction, 'calibrationPre', preValue);
             validateCalibrationDifference(`ambient_${direction}`, 0, preValue, postValue);
           }}
@@ -1036,16 +1162,38 @@ const MeasurementResultsScreen: React.FC = () => {
           error={validationErrors[`ambient_${direction}_0_calibration_validation`]}
         />
 
+        <CalibrationPhotoButton
+          label="Foto Calibración PRE"
+          photo={measurement.calibrationPrePhoto}
+          onPhotoSelected={(photo) => saveAmbientCalibrationPhoto(direction, 'calibrationPre', photo)}
+          onPhotoRemoved={() => removeAmbientCalibrationPhoto(direction, 'calibrationPre')}
+        />
+
+        <FormSeparator />
+
+        <FormInput
+          label="Verificación POST (dB)"
+          value={getTempInputValue(`ambient_${direction}_verificationPost`, measurement.verificationPost)}
+          onChangeText={(text) => updateTempInputValue(`ambient_${direction}_verificationPost`, text)}
+          onBlur={() => {
+            const value = getTempInputValue(`ambient_${direction}_verificationPost`, measurement.verificationPost);
+            saveAmbientMeasurementData(direction, 'verificationPost', value);
+          }}
+          keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'numeric'}
+          placeholder="0.0"
+          horizontal
+        />
+
         <FormInput
           label="Cal POST (dB)"
-          value={getTempInputValue(`ambient_${direction}_calibrationPost`, measurement.calibrationPost)}
+          value={getTempInputValue(`ambient_${direction}_0_calibrationPost`, measurement.calibrationPost)}
           onChangeText={(text) => {
             const filtered = filterCalibrationInput(text);
-            updateTempInputValue(`ambient_${direction}_calibrationPost`, filtered);
+            updateTempInputValue(`ambient_${direction}_0_calibrationPost`, filtered);
           }}
           onBlur={() => {
-            const postValue = getTempInputValue(`ambient_${direction}_calibrationPost`, measurement.calibrationPost);
-            const preValue = getTempInputValue(`ambient_${direction}_calibrationPre`, measurement.calibrationPre);
+            const postValue = getTempInputValue(`ambient_${direction}_0_calibrationPost`, measurement.calibrationPost);
+            const preValue = getTempInputValue(`ambient_${direction}_0_calibrationPre`, measurement.calibrationPre);
             saveAmbientMeasurementData(direction, 'calibrationPost', postValue);
             validateCalibrationDifference(`ambient_${direction}`, 0, preValue, postValue);
           }}
@@ -1053,13 +1201,6 @@ const MeasurementResultsScreen: React.FC = () => {
           placeholder="0.0"
           horizontal
           error={validationErrors[`ambient_${direction}_0_calibration_validation`]}
-        />
-
-        <CalibrationPhotoButton
-          label="Foto Calibración PRE"
-          photo={measurement.calibrationPrePhoto}
-          onPhotoSelected={(photo) => saveAmbientCalibrationPhoto(direction, 'calibrationPre', photo)}
-          onPhotoRemoved={() => removeAmbientCalibrationPhoto(direction, 'calibrationPre')}
         />
 
         <CalibrationPhotoButton
@@ -1086,13 +1227,15 @@ const MeasurementResultsScreen: React.FC = () => {
         calibrationPost: '',
         calibrationPrePhoto: null,
         calibrationPostPhoto: null,
+        verificationPre: '',
+        verificationPost: '',
       };
     }
 
     const pointId = currentFormat.measurementPoints[parseInt(selectedPoint)]?.id;
     const result = getMeasurementResult(pointId, selectedSchedule as 'diurnal' | 'nocturnal', 'ambient');
     console.log('getMeasurementResult returned:', result);
-    
+
     if (!result?.ambient) {
       console.log('No ambient data found, returning empty');
       return {
@@ -1104,6 +1247,8 @@ const MeasurementResultsScreen: React.FC = () => {
         calibrationPost: '',
         calibrationPrePhoto: null,
         calibrationPostPhoto: null,
+        verificationPre: '',
+        verificationPost: '',
       };
     }
 
@@ -1113,9 +1258,11 @@ const MeasurementResultsScreen: React.FC = () => {
     const finalTimeKey = `finalTime${direction}` as keyof typeof result.ambient;
     const calibrationPreKey = `calibrationPre${direction}` as keyof typeof result.ambient;
     const calibrationPostKey = `calibrationPost${direction}` as keyof typeof result.ambient;
-    
+
     const calibrationPrePhotoKey = `calibrationPre${direction}Photo` as keyof typeof result.ambient;
     const calibrationPostPhotoKey = `calibrationPost${direction}Photo` as keyof typeof result.ambient;
+    const verificationPreKey = `verificationPre${direction}` as keyof typeof result.ambient;
+    const verificationPostKey = `verificationPost${direction}` as keyof typeof result.ambient;
 
     const returnData = {
       soundLevel: result.ambient[directionKey] || '',
@@ -1126,10 +1273,12 @@ const MeasurementResultsScreen: React.FC = () => {
       calibrationPost: result.ambient[calibrationPostKey] || '',
       calibrationPrePhoto: (result.ambient[calibrationPrePhotoKey] as CalibrationPhoto) || null,
       calibrationPostPhoto: (result.ambient[calibrationPostPhotoKey] as CalibrationPhoto) || null,
+      verificationPre: result.ambient[verificationPreKey] || '',
+      verificationPost: result.ambient[verificationPostKey] || '',
     };
-    
+
     console.log('getCurrentAmbientMeasurement returning:', returnData);
-    
+
     return returnData;
   }, [selectedPoint, selectedSchedule, currentFormat, forceUpdate]);
 
@@ -1171,7 +1320,7 @@ const MeasurementResultsScreen: React.FC = () => {
   };
 
   // Save calibration photo for ambient measurements
-  const saveAmbientCalibrationPhoto = (direction: string, photoType: 'calibrationPre' | 'calibrationPost', photo: CalibrationPhoto) => {
+  const saveAmbientCalibrationPhoto = (direction: string, photoType: 'calibrationPre' | 'calibrationPost' | 'verificationPre' | 'verificationPost', photo: CalibrationPhoto) => {
     if (!selectedPoint || !selectedSchedule || !currentFormat) return;
     
     const pointId = currentFormat.measurementPoints[parseInt(selectedPoint)]?.id;
@@ -1179,11 +1328,11 @@ const MeasurementResultsScreen: React.FC = () => {
 
     const result = getMeasurementResult(pointId, selectedSchedule as 'diurnal' | 'nocturnal', 'ambient');
     let ambientData = result?.ambient || {
-      levelN: '', fileNumberN: '', initialTimeN: '', finalTimeN: '', calibrationPreN: '', calibrationPostN: '',
-      levelS: '', fileNumberS: '', initialTimeS: '', finalTimeS: '', calibrationPreS: '', calibrationPostS: '',
-      levelE: '', fileNumberE: '', initialTimeE: '', finalTimeE: '', calibrationPreE: '', calibrationPostE: '',
-      levelW: '', fileNumberW: '', initialTimeW: '', finalTimeW: '', calibrationPreW: '', calibrationPostW: '',
-      levelV: '', fileNumberV: '', initialTimeV: '', finalTimeV: '', calibrationPreV: '', calibrationPostV: '',
+      levelN: '', fileNumberN: '', initialTimeN: '', finalTimeN: '', calibrationPreN: '', calibrationPostN: '', verificationPreN: '', verificationPostN: '',
+      levelS: '', fileNumberS: '', initialTimeS: '', finalTimeS: '', calibrationPreS: '', calibrationPostS: '', verificationPreS: '', verificationPostS: '',
+      levelE: '', fileNumberE: '', initialTimeE: '', finalTimeE: '', calibrationPreE: '', calibrationPostE: '', verificationPreE: '', verificationPostE: '',
+      levelW: '', fileNumberW: '', initialTimeW: '', finalTimeW: '', calibrationPreW: '', calibrationPostW: '', verificationPreW: '', verificationPostW: '',
+      levelV: '', fileNumberV: '', initialTimeV: '', finalTimeV: '', calibrationPreV: '', calibrationPostV: '', verificationPreV: '', verificationPostV: '',
       calibrationPreNPhoto: undefined, calibrationPostNPhoto: undefined,
       calibrationPreSPhoto: undefined, calibrationPostSPhoto: undefined,
       calibrationPreEPhoto: undefined, calibrationPostEPhoto: undefined,
@@ -1237,11 +1386,11 @@ const MeasurementResultsScreen: React.FC = () => {
     } else {
       const result = getMeasurementResult(pointId, selectedSchedule as 'diurnal' | 'nocturnal', 'ambient');
       ambientData = result?.ambient || {
-      levelN: '', fileNumberN: '', initialTimeN: '', finalTimeN: '', calibrationPreN: '', calibrationPostN: '',
-      levelS: '', fileNumberS: '', initialTimeS: '', finalTimeS: '', calibrationPreS: '', calibrationPostS: '',
-      levelE: '', fileNumberE: '', initialTimeE: '', finalTimeE: '', calibrationPreE: '', calibrationPostE: '',
-      levelW: '', fileNumberW: '', initialTimeW: '', finalTimeW: '', calibrationPreW: '', calibrationPostW: '',
-      levelV: '', fileNumberV: '', initialTimeV: '', finalTimeV: '', calibrationPreV: '', calibrationPostV: '',
+      levelN: '', fileNumberN: '', initialTimeN: '', finalTimeN: '', calibrationPreN: '', calibrationPostN: '', verificationPreN: '', verificationPostN: '',
+      levelS: '', fileNumberS: '', initialTimeS: '', finalTimeS: '', calibrationPreS: '', calibrationPostS: '', verificationPreS: '', verificationPostS: '',
+      levelE: '', fileNumberE: '', initialTimeE: '', finalTimeE: '', calibrationPreE: '', calibrationPostE: '', verificationPreE: '', verificationPostE: '',
+      levelW: '', fileNumberW: '', initialTimeW: '', finalTimeW: '', calibrationPreW: '', calibrationPostW: '', verificationPreW: '', verificationPostW: '',
+      levelV: '', fileNumberV: '', initialTimeV: '', finalTimeV: '', calibrationPreV: '', calibrationPostV: '', verificationPreV: '', verificationPostV: '',
       calibrationPreNPhoto: undefined, calibrationPostNPhoto: undefined,
       calibrationPreSPhoto: undefined, calibrationPostSPhoto: undefined,
       calibrationPreEPhoto: undefined, calibrationPostEPhoto: undefined,
@@ -1269,6 +1418,12 @@ const MeasurementResultsScreen: React.FC = () => {
     } else if (field === 'calibrationPost') {
       const calibrationPostKey = `calibrationPost${direction}` as keyof typeof ambientData;
       (ambientData as any)[calibrationPostKey] = value;
+    } else if (field === 'verificationPre') {
+      const verificationPreKey = `verificationPre${direction}` as keyof typeof ambientData;
+      (ambientData as any)[verificationPreKey] = value;
+    } else if (field === 'verificationPost') {
+      const verificationPostKey = `verificationPost${direction}` as keyof typeof ambientData;
+      (ambientData as any)[verificationPostKey] = value;
     }
 
     // Clear temporary value after saving
@@ -1299,6 +1454,13 @@ const MeasurementResultsScreen: React.FC = () => {
     return (
       <View style={styles.formContainer}>
         <View style={styles.subsectionContainer}>
+          <DatePicker
+            label="Fecha"
+            value={getCurrentMeasurementDate()}
+            onChange={updateCurrentMeasurementDate}
+            horizontal
+          />
+
           {renderImmissionFields()}
         </View>
       </View>
@@ -1403,7 +1565,22 @@ const MeasurementResultsScreen: React.FC = () => {
           onTimeChange={(time) => saveImmissionMeasurementData('endTime', time)}
           horizontal
         />
-        
+
+        <FormSeparator />
+
+        <FormInput
+          label="Verificación PRE (dB)"
+          value={getTempInputValue('immission_verificationPre', measurement.verificationPre)}
+          onChangeText={(text) => updateTempInputValue('immission_verificationPre', text)}
+          onBlur={() => {
+            const value = getTempInputValue('immission_verificationPre', measurement.verificationPre);
+            saveImmissionMeasurementData('verificationPre', value);
+          }}
+          keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'numeric'}
+          placeholder="0.0"
+          horizontal
+        />
+
         <FormInput
           label="Cal PRE (dB)"
           value={getTempInputValue('immission_calibrationPre', measurement.calibrationPre)}
@@ -1424,6 +1601,28 @@ const MeasurementResultsScreen: React.FC = () => {
           error={validationErrors['immission_0_calibration_validation']}
         />
 
+        <CalibrationPhotoButton
+          label="Foto Calibración PRE"
+          photo={measurement.calibrationPrePhoto}
+          onPhotoSelected={(photo) => saveImmissionCalibrationPhoto('calibrationPre', photo)}
+          onPhotoRemoved={() => removeImmissionCalibrationPhoto('calibrationPre')}
+        />
+
+        <FormSeparator />
+
+        <FormInput
+          label="Verificación POST (dB)"
+          value={getTempInputValue('immission_verificationPost', measurement.verificationPost)}
+          onChangeText={(text) => updateTempInputValue('immission_verificationPost', text)}
+          onBlur={() => {
+            const value = getTempInputValue('immission_verificationPost', measurement.verificationPost);
+            saveImmissionMeasurementData('verificationPost', value);
+          }}
+          keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'numeric'}
+          placeholder="0.0"
+          horizontal
+        />
+
         <FormInput
           label="Cal POST (dB)"
           value={getTempInputValue('immission_calibrationPost', measurement.calibrationPost)}
@@ -1441,13 +1640,6 @@ const MeasurementResultsScreen: React.FC = () => {
           placeholder="0.0"
           horizontal
           error={validationErrors['immission_0_calibration_validation']}
-        />
-
-        <CalibrationPhotoButton
-          label="Foto Calibración PRE"
-          photo={measurement.calibrationPrePhoto}
-          onPhotoSelected={(photo) => saveImmissionCalibrationPhoto('calibrationPre', photo)}
-          onPhotoRemoved={() => removeImmissionCalibrationPhoto('calibrationPre')}
         />
 
         <CalibrationPhotoButton
@@ -1474,12 +1666,14 @@ const MeasurementResultsScreen: React.FC = () => {
         endTime: '',
         calibrationPre: '',
         calibrationPost: '',
+        verificationPre: '',
+        verificationPost: '',
       };
     }
 
     const pointId = currentFormat.measurementPoints[parseInt(selectedPoint)]?.id;
     const result = getMeasurementResult(pointId, selectedSchedule as 'diurnal' | 'nocturnal', 'immission');
-    
+
     if (!result?.immission) {
       return {
         soundLevelLeq: '',
@@ -1490,6 +1684,8 @@ const MeasurementResultsScreen: React.FC = () => {
         endTime: '',
         calibrationPre: '',
         calibrationPost: '',
+        verificationPre: '',
+        verificationPost: '',
       };
     }
 
@@ -1504,11 +1700,13 @@ const MeasurementResultsScreen: React.FC = () => {
       calibrationPost: result.immission.calibrationPost || '',
       calibrationPrePhoto: result.immission.calibrationPrePhoto || null,
       calibrationPostPhoto: result.immission.calibrationPostPhoto || null,
+      verificationPre: result.immission.verificationPre || '',
+      verificationPost: result.immission.verificationPost || '',
     };
   }, [selectedPoint, selectedSchedule, currentFormat, forceUpdate]);
 
   // Save calibration photo for immission measurements
-  const saveImmissionCalibrationPhoto = (photoType: 'calibrationPre' | 'calibrationPost', photo: CalibrationPhoto) => {
+  const saveImmissionCalibrationPhoto = (photoType: 'calibrationPre' | 'calibrationPost' | 'verificationPre' | 'verificationPost', photo: CalibrationPhoto) => {
     if (!selectedPoint || !selectedSchedule || !currentFormat) return;
     
     const pointId = currentFormat.measurementPoints[parseInt(selectedPoint)]?.id;
@@ -1588,6 +1786,10 @@ const MeasurementResultsScreen: React.FC = () => {
       immissionData.calibrationPre = value;
     } else if (field === 'calibrationPost') {
       immissionData.calibrationPost = value;
+    } else if (field === 'verificationPre') {
+      immissionData.verificationPre = value;
+    } else if (field === 'verificationPost') {
+      immissionData.verificationPost = value;
     }
 
     // Clear temporary value after saving
@@ -1615,6 +1817,13 @@ const MeasurementResultsScreen: React.FC = () => {
     return (
       <View style={styles.formContainer}>
         <View style={styles.subsectionContainer}>
+          <DatePicker
+            label="Fecha"
+            value={getCurrentMeasurementDate()}
+            onChange={updateCurrentMeasurementDate}
+            horizontal
+          />
+
           {renderSonometryFields()}
         </View>
       </View>
@@ -1663,7 +1872,22 @@ const MeasurementResultsScreen: React.FC = () => {
           onTimeChange={(time) => saveSonometryMeasurementData('endTime', time)}
           horizontal
         />
-        
+
+        <FormSeparator />
+
+        <FormInput
+          label="Verificación PRE (dB)"
+          value={getTempInputValue('sonometry_verificationPre', measurement.verificationPre)}
+          onChangeText={(text) => updateTempInputValue('sonometry_verificationPre', text)}
+          onBlur={() => {
+            const value = getTempInputValue('sonometry_verificationPre', measurement.verificationPre);
+            saveSonometryMeasurementData('verificationPre', value);
+          }}
+          keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'numeric'}
+          placeholder="0.0"
+          horizontal
+        />
+
         <FormInput
           label="Cal PRE (dB)"
           value={getTempInputValue('sonometry_calibrationPre', measurement.calibrationPre)}
@@ -1684,6 +1908,28 @@ const MeasurementResultsScreen: React.FC = () => {
           error={validationErrors['sonometry_0_calibration_validation']}
         />
 
+        <CalibrationPhotoButton
+          label="Foto Calibración PRE"
+          photo={measurement.calibrationPrePhoto}
+          onPhotoSelected={(photo) => saveSonometryCalibrationPhoto('calibrationPre', photo)}
+          onPhotoRemoved={() => removeSonometryCalibrationPhoto('calibrationPre')}
+        />
+
+        <FormSeparator />
+
+        <FormInput
+          label="Verificación POST (dB)"
+          value={getTempInputValue('sonometry_verificationPost', measurement.verificationPost)}
+          onChangeText={(text) => updateTempInputValue('sonometry_verificationPost', text)}
+          onBlur={() => {
+            const value = getTempInputValue('sonometry_verificationPost', measurement.verificationPost);
+            saveSonometryMeasurementData('verificationPost', value);
+          }}
+          keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'numeric'}
+          placeholder="0.0"
+          horizontal
+        />
+
         <FormInput
           label="Cal POST (dB)"
           value={getTempInputValue('sonometry_calibrationPost', measurement.calibrationPost)}
@@ -1701,13 +1947,6 @@ const MeasurementResultsScreen: React.FC = () => {
           placeholder="0.0"
           horizontal
           error={validationErrors['sonometry_0_calibration_validation']}
-        />
-
-        <CalibrationPhotoButton
-          label="Foto Calibración PRE"
-          photo={measurement.calibrationPrePhoto}
-          onPhotoSelected={(photo) => saveSonometryCalibrationPhoto('calibrationPre', photo)}
-          onPhotoRemoved={() => removeSonometryCalibrationPhoto('calibrationPre')}
         />
 
         <CalibrationPhotoButton
@@ -1732,12 +1971,14 @@ const MeasurementResultsScreen: React.FC = () => {
         endTime: '',
         calibrationPre: '',
         calibrationPost: '',
+        verificationPre: '',
+        verificationPost: '',
       };
     }
 
     const pointId = currentFormat.measurementPoints[parseInt(selectedPoint)]?.id;
     const result = getMeasurementResult(pointId, selectedSchedule as 'diurnal' | 'nocturnal', 'sonometry');
-    
+
     if (!result?.sonometry) {
       return {
         soundLevelLeq: '',
@@ -1746,6 +1987,8 @@ const MeasurementResultsScreen: React.FC = () => {
         endTime: '',
         calibrationPre: '',
         calibrationPost: '',
+        verificationPre: '',
+        verificationPost: '',
       };
     }
 
@@ -1758,11 +2001,13 @@ const MeasurementResultsScreen: React.FC = () => {
       calibrationPost: result.sonometry.calibrationPost || '',
       calibrationPrePhoto: result.sonometry.calibrationPrePhoto || null,
       calibrationPostPhoto: result.sonometry.calibrationPostPhoto || null,
+      verificationPre: result.sonometry.verificationPre || '',
+      verificationPost: result.sonometry.verificationPost || '',
     };
   }, [selectedPoint, selectedSchedule, currentFormat, forceUpdate]);
 
   // Save calibration photo for sonometry measurements
-  const saveSonometryCalibrationPhoto = (photoType: 'calibrationPre' | 'calibrationPost', photo: CalibrationPhoto) => {
+  const saveSonometryCalibrationPhoto = (photoType: 'calibrationPre' | 'calibrationPost' | 'verificationPre' | 'verificationPost', photo: CalibrationPhoto) => {
     if (!selectedPoint || !selectedSchedule || !currentFormat) return;
     
     const pointId = currentFormat.measurementPoints[parseInt(selectedPoint)]?.id;
@@ -1838,6 +2083,10 @@ const MeasurementResultsScreen: React.FC = () => {
       sonometryData.calibrationPre = value;
     } else if (field === 'calibrationPost') {
       sonometryData.calibrationPost = value;
+    } else if (field === 'verificationPre') {
+      sonometryData.verificationPre = value;
+    } else if (field === 'verificationPost') {
+      sonometryData.verificationPost = value;
     }
 
     // Clear temporary value after saving
@@ -1940,7 +2189,22 @@ const MeasurementResultsScreen: React.FC = () => {
             onTimeChange={(time) => saveMeasurementData(prefix, intervalIndex, 'endTime', time)}
             horizontal
           />
-          
+
+          <FormSeparator />
+
+          <FormInput
+            label="Verificación PRE (dB)"
+            value={getTempInputValue(`${prefix}_${intervalIndex}_verificationPre`, measurement.verificationPre)}
+            onChangeText={(text) => updateTempInputValue(`${prefix}_${intervalIndex}_verificationPre`, text)}
+            onBlur={() => {
+              const value = getTempInputValue(`${prefix}_${intervalIndex}_verificationPre`, measurement.verificationPre);
+              saveMeasurementData(prefix, intervalIndex, 'verificationPre', value);
+            }}
+            keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'numeric'}
+            placeholder="0.0"
+            horizontal
+          />
+
           <FormInput
             label="Cal PRE (dB)"
             value={getTempInputValue(`${prefix}_${intervalIndex}_calibrationPre`, measurement.calibrationPre)}
@@ -1954,11 +2218,33 @@ const MeasurementResultsScreen: React.FC = () => {
               saveMeasurementData(prefix, intervalIndex, 'calibrationPre', preValue);
               validateCalibrationDifference(prefix, intervalIndex, preValue, postValue);
             }}
-            keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'numeric'}
+            keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'decimal-pad'}
             placeholder="0.0"
             horizontal
             hideDoneButton
             error={validationErrors[`${prefix}_${intervalIndex}_calibration_validation`]}
+          />
+
+          <CalibrationPhotoButton
+            label="Foto Calibración PRE"
+            photo={measurement.calibrationPrePhoto}
+            onPhotoSelected={(photo) => saveCalibrationPhoto(prefix, intervalIndex, 'calibrationPre', photo)}
+            onPhotoRemoved={() => removeCalibrationPhoto(prefix, intervalIndex, 'calibrationPre')}
+          />
+
+          <FormSeparator />
+
+          <FormInput
+            label="Verificación POST (dB)"
+            value={getTempInputValue(`${prefix}_${intervalIndex}_verificationPost`, measurement.verificationPost)}
+            onChangeText={(text) => updateTempInputValue(`${prefix}_${intervalIndex}_verificationPost`, text)}
+            onBlur={() => {
+              const value = getTempInputValue(`${prefix}_${intervalIndex}_verificationPost`, measurement.verificationPost);
+              saveMeasurementData(prefix, intervalIndex, 'verificationPost', value);
+            }}
+            keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'numeric'}
+            placeholder="0.0"
+            horizontal
           />
 
           <FormInput
@@ -1974,17 +2260,10 @@ const MeasurementResultsScreen: React.FC = () => {
               saveMeasurementData(prefix, intervalIndex, 'calibrationPost', postValue);
               validateCalibrationDifference(prefix, intervalIndex, preValue, postValue);
             }}
-            keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'numeric'}
+            keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'decimal-pad'}
             placeholder="0.0"
             horizontal
             error={validationErrors[`${prefix}_${intervalIndex}_calibration_validation`]}
-          />
-
-          <CalibrationPhotoButton
-            label="Foto Calibración PRE"
-            photo={measurement.calibrationPrePhoto}
-            onPhotoSelected={(photo) => saveCalibrationPhoto(prefix, intervalIndex, 'calibrationPre', photo)}
-            onPhotoRemoved={() => removeCalibrationPhoto(prefix, intervalIndex, 'calibrationPre')}
           />
 
           <CalibrationPhotoButton
@@ -2220,6 +2499,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   intervalButtonsContainer: {
+    marginTop: 16,
     marginBottom: 16,
   },
   intervalButtonsLabel: {

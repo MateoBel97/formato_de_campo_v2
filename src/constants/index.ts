@@ -45,7 +45,6 @@ export const MEASUREMENT_TYPES: { label: string; value: MeasurementType | '' }[]
 export const WORK_ORDER_TYPES = [
   { label: 'RUI', value: 'RUI' },
   { label: 'ACU', value: 'ACU' },
-  { label: 'AMB', value: 'AMB' },
 ];
 
 export const SOUND_METERS = [
@@ -80,6 +79,16 @@ export const SCANNING_METHODS = [
   { label: 'Cinta métrica', value: 'tape_measure' },
   { label: 'Tiza o cinta visible', value: 'chalk_tape' },
   { label: 'Cuerda guía', value: 'guide_rope' },
+];
+
+export const COORDINATE_ORIGINS = [
+  { label: 'Seleccione el origen', value: '' },
+  { label: 'Origen Bogotá', value: 'BOGOTA' },
+  { label: 'Origen Este-Este', value: 'ESTE_ESTE' },
+  { label: 'Origen Este', value: 'ESTE' },
+  { label: 'Origen Oeste', value: 'OESTE' },
+  { label: 'Origen Oeste-Oeste', value: 'OESTE_OESTE' },
+  { label: 'Origen Arauca', value: 'ARAUCA' },
 ];
 
 export const DRAWER_ITEMS = [
@@ -176,6 +185,46 @@ export const WEATHER_PARAMETERS = [
   { key: 'atmosphericPressure', label: 'Presión Atmosférica', unit: 'hPa' },
   { key: 'precipitation', label: 'Precipitación', unit: 'mm' },
 ];
+
+export const WIND_DIRECTIONS = [
+  { label: 'Seleccione la dirección', value: '' },
+  { label: '-', value: '-' },
+  { label: 'N (Norte)', value: 'N' },
+  { label: 'NNE (Norte-Noreste)', value: 'NNE' },
+  { label: 'NE (Noreste)', value: 'NE' },
+  { label: 'ENE (Este-Noreste)', value: 'ENE' },
+  { label: 'E (Este)', value: 'E' },
+  { label: 'ESE (Este-Sureste)', value: 'ESE' },
+  { label: 'SE (Sureste)', value: 'SE' },
+  { label: 'SSE (Sur-Sureste)', value: 'SSE' },
+  { label: 'S (Sur)', value: 'S' },
+  { label: 'SSW (Sur-Suroeste)', value: 'SSW' },
+  { label: 'SW (Suroeste)', value: 'SW' },
+  { label: 'WSW (Oeste-Suroeste)', value: 'WSW' },
+  { label: 'W (Oeste)', value: 'W' },
+  { label: 'WNW (Oeste-Noroeste)', value: 'WNW' },
+  { label: 'NW (Noroeste)', value: 'NW' },
+  { label: 'NNW (Norte-Noroeste)', value: 'NNW' },
+];
+
+export const RESCHEDULE_REASONS = [
+  { label: 'Seleccione el motivo', value: '' },
+  { label: 'Condiciones climáticas adversas', value: 'weather' },
+  { label: 'Imposibilidad de acceso al punto de medición', value: 'access' },
+  { label: 'Solicitud del cliente', value: 'client_request' },
+  { label: 'Falta de equipos o instrumentos', value: 'equipment' },
+  { label: 'Problema técnico con equipos de medición', value: 'technical' },
+  { label: 'Otro motivo', value: 'other' },
+];
+
+export const RESCHEDULE_REASON_LABELS: { [key: string]: string } = {
+  weather: 'Condiciones climáticas adversas (lluvia, viento excesivo, etc.)',
+  access: 'Imposibilidad de acceso al punto de medición',
+  client_request: 'Solicitud del cliente',
+  equipment: 'Falta de equipos o instrumentos necesarios',
+  technical: 'Problema técnico con equipos de medición',
+  other: 'Otro motivo',
+};
 
 export const STORAGE_KEYS = {
   MEASUREMENT_FORMATS: '@measurement_formats',

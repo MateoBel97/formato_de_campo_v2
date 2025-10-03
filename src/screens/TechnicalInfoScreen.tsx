@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
 import { Formik } from 'formik';
 import * as Yup from 'yup';
@@ -38,48 +38,55 @@ const validationSchema = Yup.object({
       then: (schema) => schema.required('Especifique la estación meteorológica'),
     }),
   }),
-  scanningMethod: Yup.string().required('El método de barrido usado es requerido'),
+  scanningMethod: Yup.string().when('measurementType', {
+    is: 'emission',
+    then: (schema) => schema.required('El método de barrido usado es requerido'),
+    otherwise: (schema) => schema.notRequired(),
+  }),
 });
 
 const TechnicalInfoScreen: React.FC = () => {
   const { state, updateTechnicalInfo, saveCurrentFormat } = useMeasurement();
   const [saveTimeout, setSaveTimeout] = useState<NodeJS.Timeout | null>(null);
-  const [initialValues, setInitialValues] = useState<TechnicalInfo | null>(null);
+  const lastSavedValuesRef = useRef<TechnicalInfo | null>(null);
 
   const currentFormat = state.currentFormat;
   const technicalInfo = currentFormat?.technicalInfo;
 
-  // Initialize form values only once to prevent reinitialization
+  // Get initial values from technicalInfo or use defaults
+  const initialValues: TechnicalInfo = technicalInfo || {
+    measurementType: 'emission',
+    schedule: {
+      diurnal: false,
+      nocturnal: false,
+    },
+    soundMeter: {
+      selected: '',
+      other: '',
+    },
+    calibrator: {
+      selected: '',
+      other: '',
+    },
+    weatherStation: {
+      selected: '',
+      other: '',
+    },
+    scanningMethod: '',
+  };
+
+  // Initialize lastSavedValuesRef with current values
   useEffect(() => {
-    if (technicalInfo && !initialValues) {
-      setInitialValues(technicalInfo);
-    } else if (!technicalInfo && !initialValues) {
-      setInitialValues({
-        measurementType: 'emission',
-        schedule: {
-          diurnal: false,
-          nocturnal: false,
-        },
-        soundMeter: {
-          selected: '',
-          other: '',
-        },
-        calibrator: {
-          selected: '',
-          other: '',
-        },
-        weatherStation: {
-          selected: '',
-          other: '',
-        },
-        scanningMethod: '',
-      });
+    if (technicalInfo && !lastSavedValuesRef.current) {
+      lastSavedValuesRef.current = technicalInfo;
     }
-  }, [technicalInfo, initialValues]);
+  }, [technicalInfo]);
 
   const handleAutoSave = async (values: any) => {
-    // Check if values have actually changed from the initial values
-    if (!initialValues || JSON.stringify(values) === JSON.stringify(initialValues)) {
+    // Compare with last saved values, not initial values
+    const compareWith = lastSavedValuesRef.current || initialValues;
+
+    if (JSON.stringify(values) === JSON.stringify(compareWith)) {
       console.log('Technical info auto-save skipped: no changes detected');
       return;
     }
@@ -102,6 +109,10 @@ const TechnicalInfoScreen: React.FC = () => {
         };
         updateTechnicalInfo(technicalInfoData);
         await saveCurrentFormat();
+
+        // Update the ref with the saved values
+        lastSavedValuesRef.current = technicalInfoData;
+
         console.log('Technical info auto-saved successfully');
       } catch (error) {
         console.error('Error auto-saving technical info:', error);
@@ -118,11 +129,18 @@ const TechnicalInfoScreen: React.FC = () => {
 
   useEffect(() => {
     return () => {
+      // When unmounting, save immediately if there's a pending save
       if (saveTimeout) {
         clearTimeout(saveTimeout);
+        // Force immediate save on unmount
+        if (currentFormat && technicalInfo) {
+          saveCurrentFormat().catch(error => {
+            console.error('Error saving on unmount:', error);
+          });
+        }
       }
     };
-  }, [saveTimeout]);
+  }, [saveTimeout, currentFormat, technicalInfo]);
 
   if (!currentFormat) {
     return (
@@ -144,10 +162,11 @@ const TechnicalInfoScreen: React.FC = () => {
           Configure el tipo de medición, horarios y equipos utilizados
         </Text>
 
-        {initialValues && (
         <Formik
+          key={JSON.stringify(initialValues)}
           initialValues={initialValues}
           validationSchema={validationSchema}
+          enableReinitialize={true}
           onSubmit={() => {}}
         >
           {({ values, errors, touched, handleChange, setFieldValue }) => {
@@ -267,6 +286,7 @@ const TechnicalInfoScreen: React.FC = () => {
                   options={SCANNING_METHODS}
                   error={touched.scanningMethod && errors.scanningMethod ? errors.scanningMethod : undefined}
                   required
+                  disabled={values.measurementType !== 'emission'}
                 />
               </View>
 
@@ -274,13 +294,6 @@ const TechnicalInfoScreen: React.FC = () => {
             );
           }}
         </Formik>
-        )}
-        
-        {!initialValues && (
-          <View style={styles.errorContainer}>
-            <Text style={styles.subtitle}>Cargando información técnica...</Text>
-          </View>
-        )}
       </View>
     </ScrollView>
   );

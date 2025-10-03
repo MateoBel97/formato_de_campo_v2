@@ -20,6 +20,7 @@ interface FormPickerProps {
   placeholder?: string;
   horizontal?: boolean;
   style?: ViewStyle;
+  disabled?: boolean;
 }
 
 const FormPicker: React.FC<FormPickerProps> = ({
@@ -34,6 +35,7 @@ const FormPicker: React.FC<FormPickerProps> = ({
   placeholder = 'Seleccionar...',
   horizontal = false,
   style,
+  disabled = false,
 }) => {
   const [modalVisible, setModalVisible] = useState(false);
 
@@ -77,17 +79,19 @@ const FormPicker: React.FC<FormPickerProps> = ({
     return (
       <View style={[styles.horizontalContainer, style]}>
         <View style={styles.horizontalLabelContainer}>
-          <Text style={styles.horizontalLabel}>{label}</Text>
+          <Text style={[styles.horizontalLabel, disabled && styles.disabledText]}>{label}</Text>
           {required && <Text style={styles.required}>*</Text>}
         </View>
-        
+
         <View style={styles.horizontalPickerContainer}>
           <TouchableOpacity
             style={[
               styles.horizontalPicker,
               error && styles.pickerError,
+              disabled && styles.pickerDisabled,
             ]}
-            onPress={() => setModalVisible(true)}
+            onPress={() => !disabled && setModalVisible(true)}
+            disabled={disabled}
           >
             <Text
               style={[
@@ -139,16 +143,18 @@ const FormPicker: React.FC<FormPickerProps> = ({
   return (
     <View style={[styles.container, style]}>
       <View style={styles.labelContainer}>
-        <Text style={styles.label}>{label}</Text>
+        <Text style={[styles.label, disabled && styles.disabledText]}>{label}</Text>
         {required && <Text style={styles.required}>*</Text>}
       </View>
-      
+
       <TouchableOpacity
         style={[
           styles.picker,
           error && styles.pickerError,
+          disabled && styles.pickerDisabled,
         ]}
-        onPress={() => setModalVisible(true)}
+        onPress={() => !disabled && setModalVisible(true)}
+        disabled={disabled}
       >
         <Text
           style={[
@@ -302,7 +308,7 @@ const styles = StyleSheet.create({
   },
   horizontalContainer: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     marginBottom: 0,
     paddingTop: 8,
   },
@@ -311,7 +317,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flex: 0.5,
     paddingRight: 4,
-    paddingBottom: 8,
   },
   horizontalLabel: {
     fontSize: 14,
@@ -332,7 +337,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 1,
     backgroundColor: COLORS.surface,
-    minHeight: 20,
+    minHeight: 40,
+  },
+  pickerDisabled: {
+    backgroundColor: '#f0f0f0',
+    opacity: 0.6,
+  },
+  disabledText: {
+    color: COLORS.textSecondary,
+    opacity: 0.6,
   },
 });
 

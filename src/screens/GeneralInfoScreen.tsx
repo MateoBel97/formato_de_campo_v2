@@ -1,14 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, ScrollView, StyleSheet, Alert, Text } from 'react-native';
+import { View, ScrollView, StyleSheet, Alert, Text, Modal, TouchableOpacity, TextInput } from 'react-native';
 import { Formik } from 'formik';
 import * as Yup from 'yup';
+import { Feather } from '@expo/vector-icons';
 import { useMeasurement } from '../context/MeasurementContext';
 import FormInput from '../components/FormInput';
 import FormPicker from '../components/FormPicker';
 import DatePicker from '../components/DatePicker';
 import FormButton from '../components/FormButton';
-import { COLORS, WORK_ORDER_TYPES } from '../constants';
+import Toast from '../components/Toast';
+import { COLORS, WORK_ORDER_TYPES, RESCHEDULE_REASONS } from '../constants';
 import { GeneralInfo } from '../types';
+import { generateRescheduleEmailBody, generateRescheduleEmailSubject, copyToClipboard, openEmailClient } from '../utils/emailUtils';
 
 const validationSchema = Yup.object({
   company: Yup.string().required('El nombre de la empresa es requerido'),
@@ -24,10 +27,16 @@ const validationSchema = Yup.object({
 });
 
 const GeneralInfoScreen: React.FC = () => {
-  const { state, updateGeneralInfo, saveCurrentFormat } = useMeasurement();
+  const { state, updateGeneralInfo, saveCurrentFormat, markGeneralInfoAsSaved } = useMeasurement();
   const [isSaving, setIsSaving] = useState(false);
   const [initialValues, setInitialValues] = useState<GeneralInfo | null>(null);
-  const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [showToast, setShowToast] = useState(false);
+
+  // Reschedule modal state
+  const [showRescheduleModal, setShowRescheduleModal] = useState(false);
+  const [rescheduleReason, setRescheduleReason] = useState('');
+  const [additionalDetails, setAdditionalDetails] = useState('');
+  const [clientEmail, setClientEmail] = useState('');
 
   const currentFormat = state.currentFormat;
 
@@ -49,55 +58,79 @@ const GeneralInfoScreen: React.FC = () => {
     }
   }, [currentFormat?.generalInfo, initialValues]);
 
-  // Auto-save function with change detection
-  const autoSave = async (values: GeneralInfo) => {
-    // Check if values have actually changed from the initial values
-    if (!initialValues || JSON.stringify(values) === JSON.stringify(initialValues)) {
-      console.log('General info auto-save skipped: no changes detected');
-      return;
-    }
-
-    if (autoSaveTimeoutRef.current) {
-      clearTimeout(autoSaveTimeoutRef.current);
-    }
-
-    autoSaveTimeoutRef.current = setTimeout(async () => {
-      try {
-        updateGeneralInfo(values);
-        setTimeout(async () => {
-          try {
-            await saveCurrentFormat();
-            console.log('General info auto-saved successfully');
-          } catch (error) {
-            console.error('Error auto-saving general info:', error);
-          }
-        }, 100);
-      } catch (error) {
-        console.error('Error updating general info:', error);
-      }
-    }, 1000); // Save after 1 second of inactivity
-  };
-
-  // Cleanup timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (autoSaveTimeoutRef.current) {
-        clearTimeout(autoSaveTimeoutRef.current);
-      }
-    };
-  }, []);
-
   const handleSubmit = async (values: GeneralInfo) => {
     try {
       setIsSaving(true);
       updateGeneralInfo(values);
       await saveCurrentFormat();
-      Alert.alert('Éxito', 'Información general guardada correctamente');
+      markGeneralInfoAsSaved();
+      setShowToast(true);
+      console.log('✅ Información general guardada correctamente');
     } catch (error) {
       Alert.alert('Error', 'No se pudo guardar la información');
       console.error('Error saving general info:', error);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleOpenRescheduleModal = () => {
+    if (!currentFormat?.generalInfo) {
+      Alert.alert('Atención', 'Por favor, completa la información general antes de reprogramar.');
+      return;
+    }
+    setShowRescheduleModal(true);
+  };
+
+  const handleCloseRescheduleModal = () => {
+    setShowRescheduleModal(false);
+    setRescheduleReason('');
+    setAdditionalDetails('');
+    setClientEmail('');
+  };
+
+  const handleCopyAndOpenEmail = async () => {
+    if (!rescheduleReason) {
+      Alert.alert('Atención', 'Por favor, selecciona un motivo de reprogramación.');
+      return;
+    }
+
+    if (!currentFormat?.generalInfo) {
+      Alert.alert('Error', 'No se pudo acceder a la información general.');
+      return;
+    }
+
+    const emailBody = generateRescheduleEmailBody({
+      generalInfo: currentFormat.generalInfo,
+      reason: rescheduleReason,
+      additionalDetails,
+      clientEmail,
+    });
+
+    const emailSubject = generateRescheduleEmailSubject(currentFormat.generalInfo);
+
+    // Try to copy to clipboard
+    const copied = await copyToClipboard(emailBody);
+
+    if (copied) {
+      Alert.alert(
+        'Texto copiado',
+        'El texto del correo ha sido copiado al portapapeles. ¿Deseas abrir el cliente de correo?',
+        [
+          { text: 'Solo copiar', style: 'cancel', onPress: handleCloseRescheduleModal },
+          {
+            text: 'Abrir correo',
+            onPress: async () => {
+              await openEmailClient(emailSubject, emailBody, clientEmail);
+              handleCloseRescheduleModal();
+            },
+          },
+        ]
+      );
+    } else {
+      // If copy failed, just try to open email client
+      await openEmailClient(emailSubject, emailBody, clientEmail);
+      handleCloseRescheduleModal();
     }
   };
 
@@ -131,13 +164,7 @@ const GeneralInfoScreen: React.FC = () => {
         validationSchema={validationSchema}
         onSubmit={handleSubmit}
       >
-        {({ values, errors, touched, handleChange, handleSubmit, setFieldValue }) => {
-          // Auto-save when values change
-          useEffect(() => {
-            autoSave(values);
-          }, [values]);
-
-          return (
+        {({ values, errors, touched, handleChange, handleSubmit, setFieldValue }) => (
           <View style={styles.form}>
             <FormInput
               label="Nombre de la empresa"
@@ -177,7 +204,18 @@ const GeneralInfoScreen: React.FC = () => {
                   <FormInput
                     label="Número"
                     value={values.workOrder.number}
-                    onChangeText={(text) => setFieldValue('workOrder.number', text)}
+                    onChangeText={(text) => {
+                      // Only allow numeric input
+                      const numericText = text.replace(/[^0-9]/g, '');
+                      setFieldValue('workOrder.number', numericText);
+                    }}
+                    onBlur={() => {
+                      // Format to 3 digits with leading zeros when user finishes editing
+                      if (values.workOrder.number) {
+                        const formatted = values.workOrder.number.padStart(3, '0');
+                        setFieldValue('workOrder.number', formatted);
+                      }
+                    }}
                     error={
                       touched.workOrder?.number && errors.workOrder?.number
                         ? errors.workOrder.number
@@ -185,6 +223,7 @@ const GeneralInfoScreen: React.FC = () => {
                     }
                     keyboardType="numeric"
                     placeholder="000"
+                    maxLength={3}
                     required
                   />
                 </View>
@@ -233,18 +272,99 @@ const GeneralInfoScreen: React.FC = () => {
               size="large"
               style={styles.submitButton}
             />
+
+            <FormButton
+              title="📅 Reprogramar Medición"
+              onPress={handleOpenRescheduleModal}
+              variant="outline"
+              size="large"
+              style={styles.rescheduleButton}
+            />
+
             <View style={styles.bottomSpacing} />
           </View>
-          );
-        }}
+        )}
       </Formik>
       )}
+
+      <Toast
+        visible={showToast}
+        message="Información general guardada correctamente"
+        type="success"
+        onHide={() => setShowToast(false)}
+      />
       
       {!initialValues && (
         <View style={styles.content}>
           <Text style={styles.subtitle}>Cargando información general...</Text>
         </View>
       )}
+
+      {/* Reschedule Modal */}
+      <Modal
+        visible={showRescheduleModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={handleCloseRescheduleModal}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Reprogramar Medición</Text>
+              <TouchableOpacity onPress={handleCloseRescheduleModal} style={styles.closeButton}>
+                <Feather name="x" size={24} color={COLORS.text} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+              <Text style={styles.modalLabel}>Motivo de reprogramación *</Text>
+              <View style={styles.pickerContainer}>
+                <FormPicker
+                  label=""
+                  value={rescheduleReason}
+                  onSelect={setRescheduleReason}
+                  options={RESCHEDULE_REASONS}
+                />
+              </View>
+
+              <Text style={styles.modalLabel}>Correo del cliente (opcional)</Text>
+              <TextInput
+                style={styles.textInput}
+                value={clientEmail}
+                onChangeText={setClientEmail}
+                placeholder="cliente@ejemplo.com"
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+
+              <Text style={styles.modalLabel}>Detalles adicionales (opcional)</Text>
+              <TextInput
+                style={[styles.textInput, styles.textArea]}
+                value={additionalDetails}
+                onChangeText={setAdditionalDetails}
+                placeholder="Agrega información adicional sobre la reprogramación..."
+                multiline
+                numberOfLines={4}
+                textAlignVertical="top"
+              />
+
+              <View style={styles.modalButtons}>
+                <FormButton
+                  title="Cancelar"
+                  onPress={handleCloseRescheduleModal}
+                  variant="outline"
+                  style={styles.modalButton}
+                />
+                <FormButton
+                  title="Copiar y Abrir"
+                  onPress={handleCopyAndOpenEmail}
+                  style={styles.modalButton}
+                />
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 };
@@ -299,10 +419,78 @@ const styles = StyleSheet.create({
   },
   submitButton: {
     marginTop: 24,
+    marginBottom: 16,
+  },
+  rescheduleButton: {
     marginBottom: 32,
   },
   bottomSpacing: {
     height: 200,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContainer: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 12,
+    width: '100%',
+    maxWidth: 500,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: COLORS.text,
+  },
+  closeButton: {
+    padding: 4,
+  },
+  modalContent: {
+    padding: 20,
+  },
+  modalLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.text,
+    marginBottom: 8,
+    marginTop: 16,
+  },
+  pickerContainer: {
+    marginBottom: 8,
+  },
+  textInput: {
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    color: COLORS.text,
+    backgroundColor: COLORS.surface,
+  },
+  textArea: {
+    minHeight: 100,
+    textAlignVertical: 'top',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 24,
+    marginBottom: 20,
+  },
+  modalButton: {
+    flex: 1,
   },
   errorContainer: {
     flex: 1,

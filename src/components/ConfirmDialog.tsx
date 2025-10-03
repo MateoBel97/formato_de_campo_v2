@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { COLORS } from '../constants';
+import HoldToDeleteButton from './HoldToDeleteButton';
 
 interface ConfirmDialogProps {
   visible: boolean;
@@ -20,6 +21,8 @@ interface ConfirmDialogProps {
   onCancel: () => void;
   confirmColor?: string;
   icon?: keyof typeof Feather.glyphMap;
+  useHoldToDelete?: boolean;
+  holdDuration?: number;
 }
 
 const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
@@ -32,7 +35,14 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   onCancel,
   confirmColor = COLORS.error,
   icon = 'alert-circle',
+  useHoldToDelete = false,
+  holdDuration = 3000,
 }) => {
+  const handleDeleteComplete = () => {
+    onConfirm();
+    onCancel(); // Close dialog after confirm
+  };
+
   return (
     <Modal
       visible={visible}
@@ -53,25 +63,41 @@ const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
           {/* Message */}
           <Text style={styles.message}>{message}</Text>
 
-          {/* Buttons */}
-          <View style={styles.buttonContainer}>
-            <TouchableOpacity
-              style={[styles.button, styles.cancelButton]}
-              onPress={onCancel}
-            >
-              <Text style={styles.cancelButtonText}>{cancelText}</Text>
-            </TouchableOpacity>
+          {/* Buttons or Hold-to-Delete */}
+          {useHoldToDelete ? (
+            <View style={styles.holdToDeleteContainer}>
+              <HoldToDeleteButton
+                onDeleteComplete={handleDeleteComplete}
+                duration={holdDuration}
+                color={confirmColor}
+              />
+              <TouchableOpacity
+                style={[styles.button, styles.cancelButtonFullWidth]}
+                onPress={onCancel}
+              >
+                <Text style={styles.cancelButtonText}>{cancelText}</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.buttonContainer}>
+              <TouchableOpacity
+                style={[styles.button, styles.cancelButton]}
+                onPress={onCancel}
+              >
+                <Text style={styles.cancelButtonText}>{cancelText}</Text>
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.button, styles.confirmButton, { backgroundColor: confirmColor }]}
-              onPress={() => {
-                onConfirm();
-                onCancel(); // Close dialog after confirm
-              }}
-            >
-              <Text style={styles.confirmButtonText}>{confirmText}</Text>
-            </TouchableOpacity>
-          </View>
+              <TouchableOpacity
+                style={[styles.button, styles.confirmButton, { backgroundColor: confirmColor }]}
+                onPress={() => {
+                  onConfirm();
+                  onCancel(); // Close dialog after confirm
+                }}
+              >
+                <Text style={styles.confirmButtonText}>{confirmText}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       </View>
     </Modal>
@@ -154,6 +180,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: COLORS.surface,
+  },
+  holdToDeleteContainer: {
+    width: '100%',
+    alignItems: 'center',
+    gap: 32,
+  },
+  cancelButtonFullWidth: {
+    width: '100%',
+    backgroundColor: COLORS.background,
+    borderWidth: 1,
+    borderColor: COLORS.border,
   },
 });
 

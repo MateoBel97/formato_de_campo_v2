@@ -7,6 +7,7 @@ import { useMeasurement } from '../context/MeasurementContext';
 import FormInput from '../components/FormInput';
 import FormButton from '../components/FormButton';
 import TimePicker from '../components/TimePicker';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { COLORS } from '../constants';
 import { ExternalEvent } from '../types';
 
@@ -27,6 +28,8 @@ const ExternalEventsScreen: React.FC = () => {
   const [isAdding, setIsAdding] = useState(false);
   const [editingEvent, setEditingEvent] = useState<ExternalEvent | null>(null);
   const [quickEventData, setQuickEventData] = useState<{name: string, time: string} | null>(null);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [eventToDelete, setEventToDelete] = useState<ExternalEvent | null>(null);
 
   const currentFormat = state.currentFormat;
   const externalEvents = currentFormat?.externalEvents || [];
@@ -130,24 +133,16 @@ const ExternalEventsScreen: React.FC = () => {
   };
 
   const handleDeleteEvent = (event: ExternalEvent) => {
-    Alert.alert(
-      'Confirmar eliminación',
-      `¿Está seguro de que desea eliminar el evento "${event.name}"?`,
-      [
-        {
-          text: 'Cancelar',
-          style: 'cancel',
-        },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: async () => {
-            deleteExternalEvent(event.id);
-            await saveCurrentFormat();
-          },
-        },
-      ]
-    );
+    setEventToDelete(event);
+    setShowDeleteDialog(true);
+  };
+
+  const confirmDelete = async () => {
+    if (eventToDelete) {
+      deleteExternalEvent(eventToDelete.id);
+      await saveCurrentFormat();
+      setEventToDelete(null);
+    }
   };
 
   const handleEditEvent = (event: ExternalEvent) => {
@@ -353,6 +348,22 @@ const ExternalEventsScreen: React.FC = () => {
         
         <View style={styles.bottomSpacing} />
       </View>
+
+      <ConfirmDialog
+        visible={showDeleteDialog}
+        title="Confirmar eliminación"
+        message={`¿Está seguro de que desea eliminar el evento "${eventToDelete?.name || 'Sin nombre'}"?`}
+        confirmText="Eliminar"
+        cancelText="Cancelar"
+        useHoldToDelete={true}
+        onConfirm={confirmDelete}
+        onCancel={() => {
+          setShowDeleteDialog(false);
+          setEventToDelete(null);
+        }}
+        confirmColor={COLORS.error}
+        icon="trash-2"
+      />
     </ScrollView>
   );
 };

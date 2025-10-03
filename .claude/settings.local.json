@@ -33,7 +33,10 @@
       "Bash(npx eas:*)",
       "Bash(grep:*)",
       "mcp__ide__getDiagnostics",
-      "Read(c:\\Users\\Mateo B\\Downloads/**)"
+      "Read(c:\\Users\\Mateo B\\Downloads/**)",
+      "Read(//c/Users/Mateo B/Downloads/**)",
+      "Read(//c/Users/Mateo B/AppData/Local/**)",
+      "Bash(findstr:*)"
     ],
     "deny": [],
     "defaultMode": "acceptEdits"

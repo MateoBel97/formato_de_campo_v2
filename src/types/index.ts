@@ -50,6 +50,8 @@ export interface EmissionInterval {
   calibrationPost?: string;
   calibrationPrePhoto?: CalibrationPhoto;
   calibrationPostPhoto?: CalibrationPhoto;
+  verificationPre?: string;
+  verificationPost?: string;
 }
 
 export interface EmissionResults {
@@ -72,6 +74,8 @@ export interface AmbientResults {
   calibrationPostN: string;
   calibrationPreNPhoto?: CalibrationPhoto;
   calibrationPostNPhoto?: CalibrationPhoto;
+  verificationPreN?: string;
+  verificationPostN?: string;
   levelS: string;
   fileNumberS: string;
   initialTimeS: string;
@@ -80,6 +84,8 @@ export interface AmbientResults {
   calibrationPostS: string;
   calibrationPreSPhoto?: CalibrationPhoto;
   calibrationPostSPhoto?: CalibrationPhoto;
+  verificationPreS?: string;
+  verificationPostS?: string;
   levelE: string;
   fileNumberE: string;
   initialTimeE: string;
@@ -88,6 +94,8 @@ export interface AmbientResults {
   calibrationPostE: string;
   calibrationPreEPhoto?: CalibrationPhoto;
   calibrationPostEPhoto?: CalibrationPhoto;
+  verificationPreE?: string;
+  verificationPostE?: string;
   levelW: string;
   fileNumberW: string;
   initialTimeW: string;
@@ -96,6 +104,8 @@ export interface AmbientResults {
   calibrationPostW: string;
   calibrationPreWPhoto?: CalibrationPhoto;
   calibrationPostWPhoto?: CalibrationPhoto;
+  verificationPreW?: string;
+  verificationPostW?: string;
   levelV: string;
   fileNumberV: string;
   initialTimeV: string;
@@ -104,6 +114,8 @@ export interface AmbientResults {
   calibrationPostV: string;
   calibrationPreVPhoto?: CalibrationPhoto;
   calibrationPostVPhoto?: CalibrationPhoto;
+  verificationPreV?: string;
+  verificationPostV?: string;
 }
 
 export interface ImmissionResults {
@@ -117,6 +129,8 @@ export interface ImmissionResults {
   calibrationPost: string;
   calibrationPrePhoto?: CalibrationPhoto;
   calibrationPostPhoto?: CalibrationPhoto;
+  verificationPre?: string;
+  verificationPost?: string;
 }
 
 export interface SonometryResults {
@@ -130,12 +144,15 @@ export interface SonometryResults {
   calibrationPost: string;
   calibrationPrePhoto?: CalibrationPhoto;
   calibrationPostPhoto?: CalibrationPhoto;
+  verificationPre?: string;
+  verificationPost?: string;
 }
 
 export interface MeasurementResults {
   pointId: string;
   schedule: 'diurnal' | 'nocturnal';
   type: MeasurementType;
+  date?: string; // Date for this specific point-schedule combination (YYYY-MM-DD format)
   emission?: EmissionResults;
   ambient?: AmbientResults;
   immission?: ImmissionResults;
@@ -172,6 +189,7 @@ export interface Photo {
   pointId?: string; // Optional for Croquis photos
   schedule?: 'diurnal' | 'nocturnal'; // Optional for Croquis photos
   type: 'measurement' | 'croquis'; // New field to distinguish photo types
+  _blobUrlLost?: boolean; // Flag to indicate photo was stored as blob URL and is now unavailable
 }
 
 export interface GeneralInfo {
@@ -224,15 +242,20 @@ export interface AppState {
   savedFormats: MeasurementFormat[];
   isLoading: boolean;
   error: string | null;
+  generalInfoSaved: boolean; // Flag to track if general info has been explicitly saved
   selectedPointForNavigation: string | null;
   selectedScheduleForNavigation: ScheduleType | null;
+  selectedIntervalForNavigation: number | string | null; // For emission intervals (number) or ambient directions (string)
+  selectedIsResidualForNavigation: boolean | null; // For emission type: true if navigating to residual interval
+  selectedWeatherScheduleForNavigation: ScheduleType | null;
 }
 
-export type AppAction = 
+export type AppAction =
   | { type: 'SET_CURRENT_FORMAT'; payload: MeasurementFormat }
   | { type: 'UPDATE_GENERAL_INFO'; payload: GeneralInfo }
   | { type: 'ADD_MEASUREMENT_POINT'; payload: MeasurementPoint }
   | { type: 'UPDATE_MEASUREMENT_POINT'; payload: { id: string; point: MeasurementPoint } }
+  | { type: 'REORDER_MEASUREMENT_POINTS'; payload: MeasurementPoint[] }
   | { type: 'DELETE_MEASUREMENT_POINT'; payload: string }
   | { type: 'UPDATE_WEATHER_CONDITIONS'; payload: WeatherConditions }
   | { type: 'UPDATE_TECHNICAL_INFO'; payload: TechnicalInfo }
@@ -240,6 +263,7 @@ export type AppAction =
   | { type: 'ADD_MEASUREMENT_RESULT'; payload: MeasurementResults }
   | { type: 'UPDATE_MEASUREMENT_RESULT'; payload: { index: number; result: MeasurementResults } }
   | { type: 'UPDATE_MEASUREMENT_RESULT_DATA'; payload: { pointId: string; schedule: 'diurnal' | 'nocturnal'; type: MeasurementType; data: any } }
+  | { type: 'UPDATE_MEASUREMENT_RESULT_DATE'; payload: { pointId: string; schedule: 'diurnal' | 'nocturnal'; type: MeasurementType; date: string } }
   | { type: 'UPDATE_QUALITATIVE_DATA'; payload: QualitativeData }
   | { type: 'ADD_EXTERNAL_EVENT'; payload: ExternalEvent }
   | { type: 'DELETE_EXTERNAL_EVENT'; payload: string }
@@ -251,5 +275,7 @@ export type AppAction =
   | { type: 'DELETE_FORMAT'; payload: string }
   | { type: 'SET_LOADING'; payload: boolean }
   | { type: 'SET_ERROR'; payload: string | null }
+  | { type: 'SET_GENERAL_INFO_SAVED'; payload: boolean }
   | { type: 'CLEAR_CURRENT_FORMAT' }
-  | { type: 'SET_NAVIGATION_SELECTION'; payload: { pointId: string; schedule: ScheduleType } };
+  | { type: 'SET_NAVIGATION_SELECTION'; payload: { pointId: string; schedule: ScheduleType; interval?: number | string; isResidual?: boolean } }
+  | { type: 'SET_WEATHER_NAVIGATION_SCHEDULE'; payload: ScheduleType };

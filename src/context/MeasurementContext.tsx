@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppState, AppAction, MeasurementFormat, GeneralInfo, MeasurementPoint, WeatherConditions, TechnicalInfo, InspectionData, MeasurementResults, QualitativeData, ExternalEvent, Photo, MeasurementType } from '../types';
 import { STORAGE_KEYS } from '../constants';
 import { normalizeWeatherConditionsForExport } from '../utils/numberUtils';
+import { saveFormatsToFile, syncStorageToFiles, isWindows } from '../utils/windowsStorage';
 
 // Deep comparison utility function
 const deepEqual = (obj1: any, obj2: any): boolean => {
@@ -56,8 +57,12 @@ const initialState: AppState = {
   savedFormats: [],
   isLoading: false,
   error: null,
+  generalInfoSaved: false,
   selectedPointForNavigation: null,
   selectedScheduleForNavigation: null,
+  selectedIntervalForNavigation: null,
+  selectedIsResidualForNavigation: null,
+  selectedWeatherScheduleForNavigation: null,
 };
 
 // Store clean copy for comparison
@@ -108,20 +113,20 @@ const createEmptyFormat = (): MeasurementFormat => ({
   measurementPoints: [],
   weatherConditions: {
     diurnal: {
-      windSpeed: { initial: 0, final: 0 },
+      windSpeed: { initial: '', final: '' },
       windDirection: { initial: '', final: '' },
-      temperature: { initial: 0, final: 0 },
-      humidity: { initial: 0, final: 0 },
-      atmosphericPressure: { initial: 0, final: 0 },
-      precipitation: { initial: 0, final: 0 },
+      temperature: { initial: '', final: '' },
+      humidity: { initial: '', final: '' },
+      atmosphericPressure: { initial: '', final: '' },
+      precipitation: { initial: '', final: '' },
     },
     nocturnal: {
-      windSpeed: { initial: 0, final: 0 },
+      windSpeed: { initial: '', final: '' },
       windDirection: { initial: '', final: '' },
-      temperature: { initial: 0, final: 0 },
-      humidity: { initial: 0, final: 0 },
-      atmosphericPressure: { initial: 0, final: 0 },
-      precipitation: { initial: 0, final: 0 },
+      temperature: { initial: '', final: '' },
+      humidity: { initial: '', final: '' },
+      atmosphericPressure: { initial: '', final: '' },
+      precipitation: { initial: '', final: '' },
     },
   },
   technicalInfo: {
@@ -167,13 +172,36 @@ const createEmptyFormat = (): MeasurementFormat => ({
 const measurementReducer = (state: AppState, action: AppAction): AppState => {
   switch (action.type) {
     case 'SET_CURRENT_FORMAT':
+      // Determine if this is an existing format (has complete general info) or a new one
+      const isExistingFormat = action.payload &&
+        action.payload.generalInfo &&
+        action.payload.generalInfo.company &&
+        action.payload.generalInfo.supervisor &&
+        action.payload.generalInfo.workOrder.number;
+
+      console.log('🔄 [REDUCER] SET_CURRENT_FORMAT:', {
+        formatId: action.payload?.id,
+        company: action.payload?.generalInfo?.company || 'EMPTY',
+        supervisor: action.payload?.generalInfo?.supervisor || 'EMPTY',
+        workOrderNumber: action.payload?.generalInfo?.workOrder?.number || 'EMPTY',
+        isExistingFormat,
+        willSetGeneralInfoSaved: isExistingFormat
+      });
+
       return {
         ...state,
         currentFormat: action.payload,
+        generalInfoSaved: isExistingFormat, // Set to true for existing formats
       };
     
     case 'UPDATE_GENERAL_INFO':
       if (!state.currentFormat) return state;
+      console.log('📝 [UPDATE_GENERAL_INFO] Updating with:', {
+        company: action.payload.company,
+        supervisor: action.payload.supervisor,
+        workOrderNumber: action.payload.workOrder.number,
+        date: action.payload.date
+      });
       return {
         ...state,
         currentFormat: updateWithTimestamp(state.currentFormat, {
@@ -198,6 +226,15 @@ const measurementReducer = (state: AppState, action: AppAction): AppState => {
           measurementPoints: state.currentFormat.measurementPoints.map(point =>
             point.id === action.payload.id ? { ...point, ...action.payload.point } : point
           ),
+        }),
+      };
+
+    case 'REORDER_MEASUREMENT_POINTS':
+      if (!state.currentFormat) return state;
+      return {
+        ...state,
+        currentFormat: updateWithTimestamp(state.currentFormat, {
+          measurementPoints: action.payload,
         }),
       };
 
@@ -300,11 +337,12 @@ const measurementReducer = (state: AppState, action: AppAction): AppState => {
           }),
         };
       } else {
-        // Create new result
+        // Create new result with default date from general info
         const newResult: MeasurementResults = {
           pointId,
           schedule,
           type,
+          date: state.currentFormat.generalInfo.date, // Initialize with study date
           [type]: data,
         };
         return {
@@ -314,6 +352,25 @@ const measurementReducer = (state: AppState, action: AppAction): AppState => {
           }),
         };
       }
+
+    case 'UPDATE_MEASUREMENT_RESULT_DATE':
+      if (!state.currentFormat) return state;
+      const { pointId: datePointId, schedule: dateSchedule, type: dateType, date } = action.payload;
+      const existingDateResultIndex = state.currentFormat.measurementResults.findIndex(
+        result => result.pointId === datePointId && result.schedule === dateSchedule && result.type === dateType
+      );
+
+      if (existingDateResultIndex !== -1) {
+        return {
+          ...state,
+          currentFormat: updateWithTimestamp(state.currentFormat, {
+            measurementResults: state.currentFormat.measurementResults.map((result, index) =>
+              index === existingDateResultIndex ? { ...result, date } : result
+            ),
+          }),
+        };
+      }
+      return state;
 
     case 'UPDATE_QUALITATIVE_DATA':
       if (!state.currentFormat) return state;
@@ -348,57 +405,45 @@ const measurementReducer = (state: AppState, action: AppAction): AppState => {
       if (!state.currentFormat) return state;
       const newState = {
         ...state,
-        currentFormat: updateWithTimestamp(state.currentFormat, {
+        currentFormat: {
+          ...state.currentFormat,
           photos: [...state.currentFormat.photos, action.payload],
-        }),
+          updatedAt: new Date().toISOString(), // Always update timestamp for photo changes
+        },
       };
-      console.log('Photo added to context, total photos:', newState.currentFormat.photos.length);
-      console.log('Photo IDs in format:', newState.currentFormat.photos.map(p => p.id));
-      // Update cleanFormatCopy immediately in reducer
-      if (cleanFormatCopy) {
-        cleanFormatCopy = createDeepCopy(newState.currentFormat);
-        console.log('CleanFormatCopy updated in ADD_PHOTO reducer');
-      }
+      console.log('🔄 [REDUCER] ADD_PHOTO - Total:', newState.currentFormat.photos.length);
       return newState;
 
     case 'UPDATE_PHOTO':
       if (!state.currentFormat) return state;
       const updatedState = {
         ...state,
-        currentFormat: updateWithTimestamp(state.currentFormat, {
+        currentFormat: {
+          ...state.currentFormat,
           photos: state.currentFormat.photos.map(photo =>
             photo.id === action.payload.id
               ? { ...photo, ...action.payload.photo }
               : photo
           ),
-        }),
+          updatedAt: new Date().toISOString(), // Always update timestamp for photo changes
+        },
       };
-      console.log('Photo updated in context:', action.payload.id);
-      // Update cleanFormatCopy immediately in reducer
-      if (cleanFormatCopy) {
-        cleanFormatCopy = createDeepCopy(updatedState.currentFormat);
-        console.log('CleanFormatCopy updated in UPDATE_PHOTO reducer');
-      }
+      console.log('🔄 [REDUCER] UPDATE_PHOTO - ID:', action.payload.id);
       return updatedState;
 
     case 'DELETE_PHOTO':
       if (!state.currentFormat) return state;
       const deletedState = {
         ...state,
-        currentFormat: updateWithTimestamp(state.currentFormat, {
+        currentFormat: {
+          ...state.currentFormat,
           photos: state.currentFormat.photos.filter(
             photo => photo.id !== action.payload
           ),
-        }),
+          updatedAt: new Date().toISOString(), // Always update timestamp for photo changes
+        },
       };
-      console.log('Photo deleted from context:', action.payload);
-      console.log('Remaining photos:', deletedState.currentFormat.photos.length);
-      console.log('Remaining photo IDs:', deletedState.currentFormat.photos.map(p => p.id));
-      // Update cleanFormatCopy immediately in reducer
-      if (cleanFormatCopy) {
-        cleanFormatCopy = createDeepCopy(deletedState.currentFormat);
-        console.log('CleanFormatCopy updated in DELETE_PHOTO reducer');
-      }
+      console.log('🔄 [REDUCER] DELETE_PHOTO - Remaining:', deletedState.currentFormat.photos.length);
       return deletedState;
 
     case 'LOAD_SAVED_FORMATS':
@@ -441,10 +486,18 @@ const measurementReducer = (state: AppState, action: AppAction): AppState => {
         error: action.payload,
       };
 
+    case 'SET_GENERAL_INFO_SAVED':
+      console.log('🔄 [REDUCER] SET_GENERAL_INFO_SAVED:', action.payload);
+      return {
+        ...state,
+        generalInfoSaved: action.payload,
+      };
+
     case 'CLEAR_CURRENT_FORMAT':
       return {
         ...state,
         currentFormat: null,
+        generalInfoSaved: false, // Reset flag when clearing format
       };
 
     case 'SET_NAVIGATION_SELECTION':
@@ -452,6 +505,14 @@ const measurementReducer = (state: AppState, action: AppAction): AppState => {
         ...state,
         selectedPointForNavigation: action.payload.pointId,
         selectedScheduleForNavigation: action.payload.schedule,
+        selectedIntervalForNavigation: action.payload.interval ?? null,
+        selectedIsResidualForNavigation: action.payload.isResidual ?? null,
+      };
+
+    case 'SET_WEATHER_NAVIGATION_SCHEDULE':
+      return {
+        ...state,
+        selectedWeatherScheduleForNavigation: action.payload,
       };
 
     default:
@@ -466,13 +527,15 @@ interface MeasurementContextType {
   updateGeneralInfo: (info: GeneralInfo) => void;
   addMeasurementPoint: (point: MeasurementPoint) => Promise<boolean>;
   updateMeasurementPoint: (id: string, point: MeasurementPoint) => void;
-  deleteMeasurementPoint: (id: string) => void;
+  deleteMeasurementPoint: (id: string) => Promise<void>;
+  reorderMeasurementPoints: (newOrder: MeasurementPoint[]) => Promise<void>;
   updateWeatherConditions: (conditions: WeatherConditions) => void;
   updateTechnicalInfo: (info: TechnicalInfo) => void;
   updateInspectionData: (data: InspectionData) => void;
   addMeasurementResult: (result: MeasurementResults) => void;
   updateMeasurementResult: (index: number, result: MeasurementResults) => void;
   updateMeasurementResultData: (pointId: string, schedule: 'diurnal' | 'nocturnal', type: MeasurementType, data: any) => void;
+  updateMeasurementResultDate: (pointId: string, schedule: 'diurnal' | 'nocturnal', type: MeasurementType, date: string) => void;
   updateQualitativeData: (data: QualitativeData) => void;
   addExternalEvent: (event: ExternalEvent) => void;
   deleteExternalEvent: (id: string) => void;
@@ -484,7 +547,9 @@ interface MeasurementContextType {
   deleteFormat: (id: string) => Promise<void>;
   exportFormat: (format: MeasurementFormat) => Promise<string>;
   clearCurrentFormat: () => void;
-  setNavigationSelection: (pointId: string, schedule: ScheduleType) => void;
+  markGeneralInfoAsSaved: () => void;
+  setNavigationSelection: (pointId: string, schedule: ScheduleType, interval?: number | string, isResidual?: boolean) => void;
+  setWeatherNavigationSchedule: (schedule: ScheduleType) => void;
 }
 
 const MeasurementContext = createContext<MeasurementContextType | undefined>(undefined);
@@ -541,17 +606,22 @@ export const MeasurementProvider: React.FC<{ children: ReactNode }> = ({ childre
   };
 
   const loadFormat = (format: MeasurementFormat) => {
-    console.log('🔄 Loading format:', format.id);
-    console.log('📷 Format photos count:', format.photos?.length || 0);
-    console.log('📷 Format photo IDs:', format.photos?.map(p => p.id) || []);
-    console.log('📷 Photo types:', format.photos?.map(p => `${p.id}:${p.type}`) || []);
+    console.log('🔄 [LOAD] ========== START ==========');
+    console.log('🔄 [LOAD] Format ID:', format.id);
+    console.log('🔄 [LOAD] Photos count:', format.photos?.length || 0);
+    console.log('🔄 [LOAD] General Info:', {
+      company: format.generalInfo?.company || 'empty',
+      supervisor: format.generalInfo?.supervisor || 'empty',
+      workOrderNumber: format.generalInfo?.workOrder?.number || 'empty'
+    });
 
     dispatch({ type: 'SET_CURRENT_FORMAT', payload: format });
 
     // Store clean copy for change detection
     cleanFormatCopy = createDeepCopy(format);
-    console.log('💾 Clean copy stored for format:', format.id, 'with', cleanFormatCopy?.photos?.length || 0, 'photos');
-    console.log('✅ Format loaded successfully in context');
+    console.log('🔄 [LOAD] CleanCopy created:', cleanFormatCopy?.photos?.length || 0, 'photos');
+    console.log('🔄 [LOAD] generalInfoSaved will be set based on general info completeness');
+    console.log('✅ [LOAD] ========== DONE ==========');
   };
 
   const updateGeneralInfo = (info: GeneralInfo) => {
@@ -596,8 +666,39 @@ export const MeasurementProvider: React.FC<{ children: ReactNode }> = ({ childre
     dispatch({ type: 'UPDATE_MEASUREMENT_POINT', payload: { id, point } });
   };
 
-  const deleteMeasurementPoint = (id: string) => {
+  const deleteMeasurementPoint = async (id: string) => {
+    if (!state.currentFormat) return;
+
+    // Create the updated format manually
+    const deletedPointId = id;
+    const updatedFormat: MeasurementFormat = {
+      ...state.currentFormat,
+      measurementPoints: state.currentFormat.measurementPoints.filter(point => point.id !== deletedPointId),
+      measurementResults: state.currentFormat.measurementResults?.filter(result => result.pointId !== deletedPointId) || [],
+      photos: state.currentFormat.photos?.filter(photo => photo.pointId !== deletedPointId) || [],
+      updatedAt: new Date().toISOString(),
+    };
+
+    // Dispatch to update state
     dispatch({ type: 'DELETE_MEASUREMENT_POINT', payload: id });
+
+    // Save the updated format
+    try {
+      await saveCurrentFormat(updatedFormat);
+    } catch (error) {
+      console.error('Error saving after deleting point:', error);
+    }
+  };
+
+  const reorderMeasurementPoints = async (newOrder: MeasurementPoint[]) => {
+    dispatch({ type: 'REORDER_MEASUREMENT_POINTS', payload: newOrder });
+
+    // Save the updated format after reordering
+    try {
+      await saveCurrentFormat();
+    } catch (error) {
+      console.error('Error saving after reordering points:', error);
+    }
   };
 
   const updateWeatherConditions = (conditions: WeatherConditions) => {
@@ -624,6 +725,10 @@ export const MeasurementProvider: React.FC<{ children: ReactNode }> = ({ childre
     dispatch({ type: 'UPDATE_MEASUREMENT_RESULT_DATA', payload: { pointId, schedule, type, data } });
   };
 
+  const updateMeasurementResultDate = (pointId: string, schedule: 'diurnal' | 'nocturnal', type: MeasurementType, date: string) => {
+    dispatch({ type: 'UPDATE_MEASUREMENT_RESULT_DATE', payload: { pointId, schedule, type, date } });
+  };
+
   const updateQualitativeData = (data: QualitativeData) => {
     dispatch({ type: 'UPDATE_QUALITATIVE_DATA', payload: data });
   };
@@ -639,10 +744,13 @@ export const MeasurementProvider: React.FC<{ children: ReactNode }> = ({ childre
   const addPhoto = async (photo: Photo): Promise<boolean> => {
     try {
       if (!state.currentFormat) {
-        console.error('No current format available to add photo');
+        console.error('❌ [ADD_PHOTO] No current format available');
         dispatch({ type: 'SET_ERROR', payload: 'No hay formato actual disponible para agregar la foto' });
         return false;
       }
+
+      console.log('📸 [ADD_PHOTO] Starting - ID:', photo.id, 'Type:', photo.type);
+      console.log('📸 [ADD_PHOTO] Current photos count:', state.currentFormat.photos.length);
 
       // Calculate the new format state with the added photo
       const newFormatWithPhoto = {
@@ -651,9 +759,7 @@ export const MeasurementProvider: React.FC<{ children: ReactNode }> = ({ childre
         updatedAt: new Date().toISOString()
       };
 
-      console.log('Photo being added:', photo.id);
-      console.log('Photos before addition:', state.currentFormat.photos.length);
-      console.log('Photos after addition (calculated):', newFormatWithPhoto.photos.length);
+      console.log('📸 [ADD_PHOTO] New photos count:', newFormatWithPhoto.photos.length);
 
       // Dispatch the action to update context
       dispatch({ type: 'ADD_PHOTO', payload: photo });
@@ -661,16 +767,15 @@ export const MeasurementProvider: React.FC<{ children: ReactNode }> = ({ childre
       // Intentar guardar inmediatamente usando el estado calculado
       try {
         await saveCurrentFormat(newFormatWithPhoto);
-        console.log('Photo saved successfully to storage with calculated state');
+        console.log('✅ [ADD_PHOTO] Photo saved successfully');
         return true;
       } catch (saveError) {
-        console.error('Error saving photo immediately, trying debounced save:', saveError);
-        // Si falla el guardado inmediato, usar debounced save con alerta
+        console.error('❌ [ADD_PHOTO] Error saving:', saveError instanceof Error ? saveError.message : 'Unknown');
         debouncedsave(true);
         return false;
       }
     } catch (error) {
-      console.error('Error adding photo to context:', error);
+      console.error('❌ [ADD_PHOTO] Error:', error instanceof Error ? error.message : 'Unknown');
       dispatch({ type: 'SET_ERROR', payload: 'Error al agregar la foto al formato' });
       return false;
     }
@@ -740,19 +845,22 @@ export const MeasurementProvider: React.FC<{ children: ReactNode }> = ({ childre
       console.log('Photos after deletion (calculated):', newFormatWithoutPhoto.photos.length);
       console.log('Photo was found and will be removed:', state.currentFormat.photos.some(p => p.id === id) ? 'Yes' : 'No');
 
-      // Try to delete the physical file if it exists
-      if (photoToDelete?.uri) {
+      // Try to delete the physical file if it exists (only for mobile platforms)
+      if (photoToDelete?.uri && Platform.OS !== 'web' && Platform.OS !== 'windows') {
         try {
           const { deleteAsync, getInfoAsync } = await import('expo-file-system/legacy');
           const fileInfo = await getInfoAsync(photoToDelete.uri);
           if (fileInfo.exists) {
             await deleteAsync(photoToDelete.uri, { idempotent: true });
-            console.log('Physical photo file deleted:', photoToDelete.uri);
+            console.log('🗑️ [PHOTO] Physical file deleted');
           }
         } catch (fileError) {
-          console.warn('Could not delete physical photo file:', fileError);
+          console.warn('⚠️ [PHOTO] Could not delete physical file:', fileError instanceof Error ? fileError.message : 'Unknown');
           // Continue even if file deletion fails - the reference will be removed from the format
         }
+      } else if (photoToDelete?.uri && (Platform.OS === 'web' || Platform.OS === 'windows')) {
+        // For web/Windows, photos are data URLs in memory, no physical file to delete
+        console.log('🗑️ [PHOTO] Removing from memory (data URL)');
       }
 
       // Dispatch the action to update context
@@ -779,21 +887,30 @@ export const MeasurementProvider: React.FC<{ children: ReactNode }> = ({ childre
   const saveCurrentFormat = async (formatToSaveOverride?: MeasurementFormat) => {
     const formatToUse = formatToSaveOverride || state.currentFormat;
     if (!formatToUse) {
-      console.log('No current format to save');
+      console.log('❌ [SAVE] No format to save');
       const errorMsg = 'No hay formato actual para guardar';
       dispatch({ type: 'SET_ERROR', payload: errorMsg });
       throw new Error(errorMsg);
     }
 
+    console.log('💾 [SAVE] ========== START ==========');
+    console.log('💾 [SAVE] Format ID:', formatToUse.id);
+    console.log('💾 [SAVE] General Info:', {
+      company: formatToUse.generalInfo?.company || 'EMPTY',
+      supervisor: formatToUse.generalInfo?.supervisor || 'EMPTY',
+      workOrderNumber: formatToUse.generalInfo?.workOrder?.number || 'EMPTY',
+      date: formatToUse.generalInfo?.date || 'EMPTY'
+    });
+    console.log('💾 [SAVE] Format photos:', formatToUse.photos?.length || 0);
+    console.log('💾 [SAVE] CleanCopy photos:', cleanFormatCopy?.photos?.length || 0);
+
     // Check if format has actually changed
     const hasChanged = hasFormatChanged(formatToUse);
+    console.log('💾 [SAVE] Has changes?', hasChanged);
 
     try {
-      console.log('Saving current format:', formatToUse.id, hasChanged ? '(with changes)' : '(no changes)');
-      console.log('Format being saved has', formatToUse.photos?.length || 0, 'photos');
-      console.log('Photo IDs being saved:', formatToUse.photos?.map(p => p.id) || []);
       dispatch({ type: 'SET_LOADING', payload: true });
-      dispatch({ type: 'SET_ERROR', payload: null }); // Limpiar errores previos
+      dispatch({ type: 'SET_ERROR', payload: null });
 
       // Only update timestamp if there are actual changes
       const formatToSave = hasChanged ? {
@@ -825,43 +942,22 @@ export const MeasurementProvider: React.FC<{ children: ReactNode }> = ({ childre
         savedFormats.push(formatToSave);
       }
 
+      console.log('💾 [SAVE] Writing to AsyncStorage...');
       await AsyncStorage.setItem(STORAGE_KEYS.MEASUREMENT_FORMATS, JSON.stringify(savedFormats));
+      console.log('💾 [SAVE] Written MEASUREMENT_FORMATS');
 
       // Also save as current format
       await AsyncStorage.setItem(STORAGE_KEYS.CURRENT_FORMAT, JSON.stringify(formatToSave));
+      console.log('💾 [SAVE] Written CURRENT_FORMAT');
+      console.log('✅ [SAVE] Saved with', formatToSave.photos?.length || 0, 'photos');
 
-      // Verification for the new storage system
-      const verification = await AsyncStorage.getItem(STORAGE_KEYS.MEASUREMENT_FORMATS);
-      if (!verification) {
-        throw new Error('No se pudo verificar que el formato se guardó correctamente');
-      }
-
-      // Additional verification: check saved photos in both storage locations
-      const verificationCurrentFormat = await AsyncStorage.getItem(STORAGE_KEYS.CURRENT_FORMAT);
-      const verificationSavedFormats = await AsyncStorage.getItem(STORAGE_KEYS.MEASUREMENT_FORMATS);
-
-      if (verificationCurrentFormat) {
-        const parsedCurrentFormat = JSON.parse(verificationCurrentFormat);
-        console.log('✅ Verification: Current format saved with', parsedCurrentFormat.photos?.length || 0, 'photos');
-        console.log('✅ Verification: Current format photo IDs:', parsedCurrentFormat.photos?.map((p: any) => p.id) || []);
-      }
-
-      if (verificationSavedFormats) {
-        const parsedSavedFormats = JSON.parse(verificationSavedFormats);
-        const verificationFormat = parsedSavedFormats.find((f: any) => f.id === formatToSave.id);
-        if (verificationFormat) {
-          console.log('✅ Verification: Saved formats updated with', verificationFormat.photos?.length || 0, 'photos');
-          console.log('✅ Verification: Saved formats photo IDs:', verificationFormat.photos?.map((p: any) => p.id) || []);
-
-          // Cross-check both storage locations have the same photo count
-          const currentFormatPhotos = JSON.parse(verificationCurrentFormat || '{}').photos || [];
-          const savedFormatPhotos = verificationFormat.photos || [];
-
-          if (currentFormatPhotos.length !== savedFormatPhotos.length) {
-            console.warn('⚠️ MISMATCH: Current format has', currentFormatPhotos.length, 'photos but saved format has', savedFormatPhotos.length, 'photos');
-          } else {
-            console.log('✅ MATCH: Both storage locations have', currentFormatPhotos.length, 'photos');
-          }
+      // For Windows, also save to files
+      if (isWindows()) {
+        try {
+          await saveFormatsToFile(savedFormats);
+          console.log('💾 [SAVE] Also saved to Windows files');
+        } catch (fileError) {
+          console.warn('⚠️ [SAVE] Could not save to files (AsyncStorage still saved):', fileError);
         }
       }
       
@@ -869,13 +965,15 @@ export const MeasurementProvider: React.FC<{ children: ReactNode }> = ({ childre
       // para evitar sobrescribir cambios pendientes
       dispatch({ type: 'SAVE_FORMAT', payload: formatToSave });
 
-      // Update clean copy after successful save, but only if there were changes
+      // Update clean copy after successful save
       if (hasChanged) {
         cleanFormatCopy = createDeepCopy(formatToSave);
-        console.log('Clean copy updated after save');
+        console.log('✅ [SAVE] CleanCopy updated:', cleanFormatCopy?.photos?.length || 0, 'photos');
+      } else {
+        console.log('⚠️ [SAVE] CleanCopy NOT updated - no changes');
       }
 
-      console.log('Format saved successfully with verification');
+      console.log('✅ [SAVE] ========== DONE ==========');
     } catch (error) {
       console.error('Error saving format:', error);
       const errorMsg = error instanceof Error ? error.message : 'Error desconocido al guardar el formato';
@@ -886,15 +984,59 @@ export const MeasurementProvider: React.FC<{ children: ReactNode }> = ({ childre
     }
   };
 
+  // Migration function to convert blob URLs to placeholder text
+  const migrateBlobPhotos = (formats: MeasurementFormat[]): MeasurementFormat[] => {
+    return formats.map(format => {
+      if (!format.photos || format.photos.length === 0) return format;
+
+      console.log(`🔍 [MIGRATION] Checking format ${format.id} with ${format.photos.length} photos`);
+
+      const migratedPhotos = format.photos.map(photo => {
+        console.log(`🔍 [MIGRATION] Photo ${photo.id}:`);
+        console.log(`  - URI type: ${photo.uri ? photo.uri.substring(0, 50) + '...' : 'EMPTY'}`);
+        console.log(`  - URI length: ${photo.uri ? photo.uri.length : 0}`);
+        console.log(`  - Is blob URL? ${photo.uri && photo.uri.startsWith('blob:')}`);
+        console.log(`  - Is data URL? ${photo.uri && photo.uri.startsWith('data:')}`);
+
+        // Check if photo URI is a blob URL (temporary URL that no longer exists)
+        if (photo.uri && photo.uri.startsWith('blob:')) {
+          console.warn(`⚠️ [MIGRATION] Found blob URL in photo ${photo.id}, marking as unavailable`);
+          return {
+            ...photo,
+            uri: '', // Clear the invalid URI
+            _blobUrlLost: true, // Flag to indicate photo was lost
+          };
+        }
+
+        // Check if URI is empty (shouldn't happen with new photos)
+        if (!photo.uri || photo.uri.trim() === '') {
+          console.warn(`⚠️ [MIGRATION] Found empty URI in photo ${photo.id}`);
+          return {
+            ...photo,
+            uri: '',
+            _blobUrlLost: true,
+          };
+        }
+
+        return photo;
+      });
+
+      return {
+        ...format,
+        photos: migratedPhotos,
+      };
+    });
+  };
+
   const loadSavedFormats = async () => {
     try {
       console.log('Loading saved formats...');
       dispatch({ type: 'SET_LOADING', payload: true });
       dispatch({ type: 'SET_ERROR', payload: null }); // Limpiar errores previos
-      
+
       const savedFormatsJson = await AsyncStorage.getItem(STORAGE_KEYS.MEASUREMENT_FORMATS);
       const currentFormatJson = await AsyncStorage.getItem(STORAGE_KEYS.CURRENT_FORMAT);
-      
+
       let savedFormats: MeasurementFormat[] = [];
       
       if (savedFormatsJson) {
@@ -926,6 +1068,27 @@ export const MeasurementProvider: React.FC<{ children: ReactNode }> = ({ childre
               return normalizedFormat;
             });
             console.log(`Loaded ${savedFormats.length} saved formats`);
+
+            // Migrate blob URLs to placeholders
+            const originalFormatsJson = JSON.stringify(savedFormats);
+            savedFormats = migrateBlobPhotos(savedFormats);
+            const migratedFormatsJson = JSON.stringify(savedFormats);
+
+            // If any migration occurred, save the migrated formats back to storage
+            if (originalFormatsJson !== migratedFormatsJson) {
+              console.log('⚠️ Migrated blob URLs, saving updated formats to storage');
+              await AsyncStorage.setItem(STORAGE_KEYS.MEASUREMENT_FORMATS, migratedFormatsJson);
+
+              // Also save to files if on Windows
+              if (isWindows()) {
+                try {
+                  await saveFormatsToFile(savedFormats);
+                  console.log('💾 Saved migrated formats to Windows files');
+                } catch (fileError) {
+                  console.warn('⚠️ Could not save migrated formats to files:', fileError);
+                }
+              }
+            }
           } else {
             console.warn('Saved formats is not an array, resetting to empty array');
             savedFormats = [];
@@ -936,7 +1099,7 @@ export const MeasurementProvider: React.FC<{ children: ReactNode }> = ({ childre
           savedFormats = [];
         }
       }
-      
+
       dispatch({ type: 'LOAD_SAVED_FORMATS', payload: savedFormats });
 
       // Cargar formato actual si existe
@@ -964,10 +1127,22 @@ export const MeasurementProvider: React.FC<{ children: ReactNode }> = ({ childre
               scanningMethod: currentFormat.technicalInfo?.scanningMethod || '',
             },
           };
-          dispatch({ type: 'SET_CURRENT_FORMAT', payload: normalizedCurrentFormat });
+
+          // Migrate blob URLs in current format
+          const originalCurrentFormatJson = JSON.stringify(normalizedCurrentFormat);
+          const migratedCurrentFormat = migrateBlobPhotos([normalizedCurrentFormat])[0];
+          const migratedCurrentFormatJson = JSON.stringify(migratedCurrentFormat);
+
+          // If migration occurred, save the migrated current format back to storage
+          if (originalCurrentFormatJson !== migratedCurrentFormatJson) {
+            console.log('⚠️ Migrated blob URLs in current format, saving to storage');
+            await AsyncStorage.setItem(STORAGE_KEYS.CURRENT_FORMAT, migratedCurrentFormatJson);
+          }
+
+          dispatch({ type: 'SET_CURRENT_FORMAT', payload: migratedCurrentFormat });
           // Store clean copy for change detection when loading from storage
-          cleanFormatCopy = createDeepCopy(normalizedCurrentFormat);
-          console.log('✅ Loaded current format with clean copy:', normalizedCurrentFormat.id);
+          cleanFormatCopy = createDeepCopy(migratedCurrentFormat);
+          console.log('✅ Loaded current format with clean copy:', migratedCurrentFormat.id);
           console.log('💾 Clean copy has', cleanFormatCopy?.photos?.length || 0, 'photos');
           console.log('💾 Clean copy photo IDs:', cleanFormatCopy?.photos?.map(p => p.id) || []);
         } catch (parseError) {
@@ -1034,8 +1209,24 @@ export const MeasurementProvider: React.FC<{ children: ReactNode }> = ({ childre
     console.log('Current format and clean copy cleared');
   };
 
-  const setNavigationSelection = (pointId: string, schedule: ScheduleType) => {
-    dispatch({ type: 'SET_NAVIGATION_SELECTION', payload: { pointId, schedule } });
+  const markGeneralInfoAsSaved = () => {
+    console.log('✅ [MARK_SAVED] Marking general info as saved');
+    console.log('✅ [MARK_SAVED] Current format:', {
+      id: state.currentFormat?.id,
+      company: state.currentFormat?.generalInfo?.company || 'EMPTY',
+      supervisor: state.currentFormat?.generalInfo?.supervisor || 'EMPTY',
+      workOrderNumber: state.currentFormat?.generalInfo?.workOrder?.number || 'EMPTY'
+    });
+    dispatch({ type: 'SET_GENERAL_INFO_SAVED', payload: true });
+    console.log('✅ [MARK_SAVED] generalInfoSaved flag set to TRUE');
+  };
+
+  const setNavigationSelection = (pointId: string, schedule: ScheduleType, interval?: number | string, isResidual?: boolean) => {
+    dispatch({ type: 'SET_NAVIGATION_SELECTION', payload: { pointId, schedule, interval, isResidual } });
+  };
+
+  const setWeatherNavigationSchedule = (schedule: ScheduleType) => {
+    dispatch({ type: 'SET_WEATHER_NAVIGATION_SCHEDULE', payload: schedule });
   };
 
   const contextValue: MeasurementContextType = {
@@ -1046,12 +1237,14 @@ export const MeasurementProvider: React.FC<{ children: ReactNode }> = ({ childre
     addMeasurementPoint,
     updateMeasurementPoint,
     deleteMeasurementPoint,
+    reorderMeasurementPoints,
     updateWeatherConditions,
     updateTechnicalInfo,
     updateInspectionData,
     addMeasurementResult,
     updateMeasurementResult,
     updateMeasurementResultData,
+    updateMeasurementResultDate,
     updateQualitativeData,
     addExternalEvent,
     deleteExternalEvent,
@@ -1063,7 +1256,9 @@ export const MeasurementProvider: React.FC<{ children: ReactNode }> = ({ childre
     deleteFormat,
     exportFormat,
     clearCurrentFormat,
+    markGeneralInfoAsSaved,
     setNavigationSelection,
+    setWeatherNavigationSchedule,
   };
 
   return (

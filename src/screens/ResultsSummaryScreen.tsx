@@ -19,13 +19,21 @@ const calculateLogarithmicSubtraction = (values1: number[], values2: number[]): 
   const avg1 = calculateLogarithmicAverage(values1);
   const avg2 = calculateLogarithmicAverage(values2);
 
+  // Check if arithmetic difference is greater than 3 dB
+  const arithmeticDifference = avg1 - avg2;
+
+  if (arithmeticDifference <= 3) {
+    // If difference is 3 dB or less, return the residual value
+    return avg2;
+  }
+
   // Logarithmic subtraction: 10 * log10(10^(L1/10) - 10^(L2/10))
   const linear1 = Math.pow(10, avg1 / 10);
   const linear2 = Math.pow(10, avg2 / 10);
 
   if (linear1 <= linear2) {
-    // If emission level is less than or equal to background, return 0 or a small negative value
-    return 0;
+    // If emission level is less than or equal to background, return residual value
+    return avg2;
   }
 
   const result = 10 * Math.log10(linear1 - linear2);
@@ -42,6 +50,8 @@ interface ValidationResult {
   missingPhotos: string[];
   isComplete: boolean;
   hasData: boolean;
+  firstMissingInterval?: number | string; // Index for emission/immission/sonometry, or direction (N/S/E/W/V) for ambient
+  isResidual?: boolean; // True if the first missing interval is in residual (for emission type)
 }
 
 const validateMeasurementResult = (
@@ -57,6 +67,8 @@ const validateMeasurementResult = (
   const residualLaeqValues: number[] = [];
   const l90Values: number[] = [];
   let hasData = false;
+  let firstMissingInterval: number | string | undefined = undefined;
+  let isResidual: boolean = false;
 
   // Validate based on measurement type
   switch (result.type) {
@@ -68,26 +80,40 @@ const validateMeasurementResult = (
           result.emission.emission.data.forEach((interval, index) => {
             const intervalMissing: string[] = [];
 
-            if (!interval.soundLevel) {
-              intervalMissing.push('Nivel sonoro');
-            } else {
-              emissionLaeqValues.push(parseDecimalInput(interval.soundLevel.toString()));
-            }
-            if (!interval.percentile90) {
-              intervalMissing.push('Percentil 90');
-            } else {
-              l90Values.push(parseDecimalInput(interval.percentile90.toString()));
-            }
+            // Check all required fields for each interval
+            if (!interval.soundLevel || interval.soundLevel === 0) intervalMissing.push('Nivel sonoro');
+            if (!interval.percentile90 || interval.percentile90 === 0) intervalMissing.push('Percentil 90');
             if (!interval.fileNumber) intervalMissing.push('Número de archivo');
             if (!interval.initialTime) intervalMissing.push('Hora inicial');
             if (!interval.finalTime) intervalMissing.push('Hora final');
-            if (!interval.calibrationPre) intervalMissing.push('Calibración PRE');
-            if (!interval.calibrationPost) intervalMissing.push('Calibración POST');
-            if (!interval.calibrationPrePhoto) intervalMissing.push('Foto calibración PRE');
-            if (!interval.calibrationPostPhoto) intervalMissing.push('Foto calibración POST');
+
+            // First interval needs PRE calibration
+            if (index === 0) {
+              if (!interval.calibrationPre) intervalMissing.push('Calibración PRE');
+              if (!interval.calibrationPrePhoto) intervalMissing.push('Foto Calibración PRE');
+              if (!interval.verificationPre) intervalMissing.push('Verificación PRE');
+            }
+
+            // Last interval needs POST calibration
+            if (index === result.emission.emission.data.length - 1) {
+              if (!interval.calibrationPost) intervalMissing.push('Calibración POST');
+              if (!interval.calibrationPostPhoto) intervalMissing.push('Foto Calibración POST');
+              if (!interval.verificationPost) intervalMissing.push('Verificación POST');
+            }
 
             if (intervalMissing.length > 0) {
+              if (firstMissingInterval === undefined) {
+                firstMissingInterval = index;
+              }
               missingFields.push(`Emisión - Intervalo ${index + 1}:\n${intervalMissing.map(field => `• ${field}`).join('\n')}`);
+            }
+
+            // Collect sound levels for logarithmic average
+            if (interval.soundLevel) {
+              emissionLaeqValues.push(parseDecimalInput(interval.soundLevel.toString()));
+            }
+            if (interval.percentile90) {
+              l90Values.push(parseDecimalInput(interval.percentile90.toString()));
             }
           });
         }
@@ -97,22 +123,38 @@ const validateMeasurementResult = (
           result.emission.residual.data.forEach((interval, index) => {
             const intervalMissing: string[] = [];
 
-            if (!interval.soundLevel) {
-              intervalMissing.push('Nivel sonoro');
-            } else {
-              residualLaeqValues.push(parseDecimalInput(interval.soundLevel.toString()));
-            }
-            if (!interval.percentile90) intervalMissing.push('Percentil 90');
+            // Check all required fields for each residual interval
+            if (!interval.soundLevel || interval.soundLevel === 0) intervalMissing.push('Nivel sonoro');
+            if (!interval.percentile90 || interval.percentile90 === 0) intervalMissing.push('Percentil 90');
             if (!interval.fileNumber) intervalMissing.push('Número de archivo');
             if (!interval.initialTime) intervalMissing.push('Hora inicial');
             if (!interval.finalTime) intervalMissing.push('Hora final');
-            if (!interval.calibrationPre) intervalMissing.push('Calibración PRE');
-            if (!interval.calibrationPost) intervalMissing.push('Calibración POST');
-            if (!interval.calibrationPrePhoto) intervalMissing.push('Foto calibración PRE');
-            if (!interval.calibrationPostPhoto) intervalMissing.push('Foto calibración POST');
+
+            // First residual interval needs PRE calibration
+            if (index === 0) {
+              if (!interval.calibrationPre) intervalMissing.push('Calibración PRE');
+              if (!interval.calibrationPrePhoto) intervalMissing.push('Foto Calibración PRE');
+              if (!interval.verificationPre) intervalMissing.push('Verificación PRE');
+            }
+
+            // Last residual interval needs POST calibration
+            if (index === result.emission.residual.data.length - 1) {
+              if (!interval.calibrationPost) intervalMissing.push('Calibración POST');
+              if (!interval.calibrationPostPhoto) intervalMissing.push('Foto Calibración POST');
+              if (!interval.verificationPost) intervalMissing.push('Verificación POST');
+            }
 
             if (intervalMissing.length > 0) {
+              if (firstMissingInterval === undefined) {
+                firstMissingInterval = index;
+                isResidual = true;
+              }
               missingFields.push(`Residual - Intervalo ${index + 1}:\n${intervalMissing.map(field => `• ${field}`).join('\n')}`);
+            }
+
+            // Collect sound levels for logarithmic average
+            if (interval.soundLevel) {
+              residualLaeqValues.push(parseDecimalInput(interval.soundLevel.toString()));
             }
           });
         }
@@ -125,39 +167,53 @@ const validateMeasurementResult = (
       if (result.ambient) {
         hasData = true;
         const directions = ['N', 'S', 'E', 'W', 'V'];
-        directions.forEach(dir => {
+
+        // Validate each direction
+        directions.forEach((dir, index) => {
+          const dirMissing: string[] = [];
           const levelKey = `level${dir}` as keyof typeof result.ambient;
           const fileKey = `fileNumber${dir}` as keyof typeof result.ambient;
-          const calibrationPreKey = `calibrationPre${dir}` as keyof typeof result.ambient;
-          const calibrationPostKey = `calibrationPost${dir}` as keyof typeof result.ambient;
-          const calibrationPrePhotoKey = `calibrationPre${dir}Photo` as keyof typeof result.ambient;
-          const calibrationPostPhotoKey = `calibrationPost${dir}Photo` as keyof typeof result.ambient;
+          const initialTimeKey = `initialTime${dir}` as keyof typeof result.ambient;
+          const finalTimeKey = `finalTime${dir}` as keyof typeof result.ambient;
+          const calPreKey = `calibrationPre${dir}` as keyof typeof result.ambient;
+          const calPostKey = `calibrationPost${dir}` as keyof typeof result.ambient;
+          const verPreKey = `verificationPre${dir}` as keyof typeof result.ambient;
+          const verPostKey = `verificationPost${dir}` as keyof typeof result.ambient;
 
-          const directionMissing: string[] = [];
+          // Check all required fields for each direction
+          if (!result.ambient![levelKey]) dirMissing.push('Nivel sonoro');
+          if (!result.ambient![fileKey]) dirMissing.push('Número de archivo');
+          if (!result.ambient![initialTimeKey]) dirMissing.push('Hora inicial');
+          if (!result.ambient![finalTimeKey]) dirMissing.push('Hora final');
 
-          if (!result.ambient![levelKey]) {
-            directionMissing.push('Nivel');
-          } else {
+          // First direction (N) needs PRE calibration
+          if (index === 0) {
+            const calPrePhotoKey = `calibrationPre${dir}Photo` as keyof typeof result.ambient;
+            if (!result.ambient![calPreKey]) dirMissing.push('Calibración PRE');
+            if (!result.ambient![calPrePhotoKey]) dirMissing.push('Foto Calibración PRE');
+            if (!result.ambient![verPreKey]) dirMissing.push('Verificación PRE');
+          }
+
+          // Last direction (V) needs POST calibration
+          if (index === directions.length - 1) {
+            const calPostPhotoKey = `calibrationPost${dir}Photo` as keyof typeof result.ambient;
+            if (!result.ambient![calPostKey]) dirMissing.push('Calibración POST');
+            if (!result.ambient![calPostPhotoKey]) dirMissing.push('Foto Calibración POST');
+            if (!result.ambient![verPostKey]) dirMissing.push('Verificación POST');
+          }
+
+          if (dirMissing.length > 0) {
+            if (firstMissingInterval === undefined) {
+              firstMissingInterval = dir;
+            }
+            missingFields.push(`Ambiental - Dirección ${dir}:\n${dirMissing.map(field => `• ${field}`).join('\n')}`);
+          }
+
+          // Collect sound levels for logarithmic average
+          if (result.ambient![levelKey]) {
             laeqValues.push(parseDecimalInput(result.ambient![levelKey] as string));
           }
-          if (!result.ambient![fileKey]) directionMissing.push('Número de archivo');
-          if (!result.ambient![calibrationPreKey]) directionMissing.push('Calibración PRE');
-          if (!result.ambient![calibrationPostKey]) directionMissing.push('Calibración POST');
-          if (!result.ambient![calibrationPrePhotoKey]) directionMissing.push('Foto calibración PRE');
-          if (!result.ambient![calibrationPostPhotoKey]) directionMissing.push('Foto calibración POST');
-
-          if (directionMissing.length > 0) {
-            missingFields.push(`Ambiental - Dirección ${dir}:\n${directionMissing.map(field => `• ${field}`).join('\n')}`);
-          }
         });
-
-        const generalMissing: string[] = [];
-        if (!result.ambient.initialTimeN) generalMissing.push('Hora inicial');
-        if (!result.ambient.finalTimeN) generalMissing.push('Hora final');
-
-        if (generalMissing.length > 0) {
-          missingFields.push(`Ambiental - General:\n${generalMissing.map(field => `• ${field}`).join('\n')}`);
-        }
       } else {
         missingFields.push('Datos de ruido ambiental completos');
       }
@@ -168,23 +224,28 @@ const validateMeasurementResult = (
         hasData = true;
         const immissionMissing: string[] = [];
 
-        if (!result.immission.levelLeq) {
-          immissionMissing.push('Nivel Leq');
-        } else {
-          laeqValues.push(parseDecimalInput(result.immission.levelLeq));
-        }
+        // Check all required fields for immission
+        if (!result.immission.levelLeq) immissionMissing.push('Nivel LAeq');
         if (!result.immission.levelLmax) immissionMissing.push('Nivel Lmax');
         if (!result.immission.levelLmin) immissionMissing.push('Nivel Lmin');
         if (!result.immission.fileNumber) immissionMissing.push('Número de archivo');
         if (!result.immission.initialTime) immissionMissing.push('Hora inicial');
         if (!result.immission.finalTime) immissionMissing.push('Hora final');
         if (!result.immission.calibrationPre) immissionMissing.push('Calibración PRE');
+        if (!result.immission.calibrationPrePhoto) immissionMissing.push('Foto Calibración PRE');
+        if (!result.immission.verificationPre) immissionMissing.push('Verificación PRE');
         if (!result.immission.calibrationPost) immissionMissing.push('Calibración POST');
-        if (!result.immission.calibrationPrePhoto) immissionMissing.push('Foto calibración PRE');
-        if (!result.immission.calibrationPostPhoto) immissionMissing.push('Foto calibración POST');
+        if (!result.immission.calibrationPostPhoto) immissionMissing.push('Foto Calibración POST');
+        if (!result.immission.verificationPost) immissionMissing.push('Verificación POST');
 
         if (immissionMissing.length > 0) {
+          firstMissingInterval = 0;
           missingFields.push(`Inmisión:\n${immissionMissing.map(field => `• ${field}`).join('\n')}`);
+        }
+
+        // Collect sound level for logarithmic average
+        if (result.immission.levelLeq) {
+          laeqValues.push(parseDecimalInput(result.immission.levelLeq));
         }
       } else {
         missingFields.push('Datos de inmisión completos');
@@ -196,23 +257,28 @@ const validateMeasurementResult = (
         hasData = true;
         const sonometryMissing: string[] = [];
 
-        if (!result.sonometry.levelLeq) {
-          sonometryMissing.push('Nivel Leq');
-        } else {
-          laeqValues.push(parseDecimalInput(result.sonometry.levelLeq));
-        }
+        // Check all required fields for sonometry
+        if (!result.sonometry.levelLeq) sonometryMissing.push('Nivel LAeq');
         if (!result.sonometry.levelLmax) sonometryMissing.push('Nivel Lmax');
         if (!result.sonometry.levelLmin) sonometryMissing.push('Nivel Lmin');
         if (!result.sonometry.fileNumber) sonometryMissing.push('Número de archivo');
         if (!result.sonometry.initialTime) sonometryMissing.push('Hora inicial');
         if (!result.sonometry.finalTime) sonometryMissing.push('Hora final');
         if (!result.sonometry.calibrationPre) sonometryMissing.push('Calibración PRE');
+        if (!result.sonometry.calibrationPrePhoto) sonometryMissing.push('Foto Calibración PRE');
+        if (!result.sonometry.verificationPre) sonometryMissing.push('Verificación PRE');
         if (!result.sonometry.calibrationPost) sonometryMissing.push('Calibración POST');
-        if (!result.sonometry.calibrationPrePhoto) sonometryMissing.push('Foto calibración PRE');
-        if (!result.sonometry.calibrationPostPhoto) sonometryMissing.push('Foto calibración POST');
+        if (!result.sonometry.calibrationPostPhoto) sonometryMissing.push('Foto Calibración POST');
+        if (!result.sonometry.verificationPost) sonometryMissing.push('Verificación POST');
 
         if (sonometryMissing.length > 0) {
+          firstMissingInterval = 0;
           missingFields.push(`Sonometría:\n${sonometryMissing.map(field => `• ${field}`).join('\n')}`);
+        }
+
+        // Collect sound level for logarithmic average
+        if (result.sonometry.levelLeq) {
+          laeqValues.push(parseDecimalInput(result.sonometry.levelLeq));
         }
       } else {
         missingFields.push('Datos de sonometría completos');
@@ -252,6 +318,8 @@ const validateMeasurementResult = (
     missingPhotos,
     isComplete: missingFields.length === 0 && missingPhotos.length === 0,
     hasData,
+    firstMissingInterval,
+    isResidual,
   };
 };
 
@@ -281,17 +349,18 @@ const getMissingPhotos = (
 interface ResultsSummaryScreenProps {
   onNavigateToResults: () => void;
   onNavigateToPhotoRegistry: () => void;
+  onNavigateToWeather: () => void;
 }
 
-const ResultsSummaryScreen: React.FC<ResultsSummaryScreenProps> = ({ onNavigateToResults, onNavigateToPhotoRegistry }) => {
-  const { state, setNavigationSelection } = useMeasurement();
+const ResultsSummaryScreen: React.FC<ResultsSummaryScreenProps> = ({ onNavigateToResults, onNavigateToPhotoRegistry, onNavigateToWeather }) => {
+  const { state, setNavigationSelection, setWeatherNavigationSchedule } = useMeasurement();
   const { currentFormat } = state;
 
   const validationResults = useMemo(() => {
     if (!currentFormat) return [];
 
     const results: ValidationResult[] = [];
-    const { measurementPoints, measurementResults, photos, technicalInfo } = currentFormat;
+    const { measurementPoints, measurementResults, photos, technicalInfo, weatherConditions } = currentFormat;
 
     // Get all possible point-schedule combinations based on technical info
     const schedules: ScheduleType[] = [];
@@ -361,6 +430,77 @@ const ResultsSummaryScreen: React.FC<ResultsSummaryScreenProps> = ({ onNavigateT
       });
     }
 
+    // Add weather conditions validation for each selected schedule
+    schedules.forEach(schedule => {
+      const conditions = weatherConditions[schedule];
+      const missingWeatherFields: string[] = [];
+
+      // Helper function to check if a value is empty
+      // A value is considered empty if it's null, undefined, empty string, or NaN
+      // 0 is considered a valid value
+      const isEmpty = (value: number | string | null | undefined): boolean => {
+        if (value === null || value === undefined) return true;
+        if (typeof value === 'string') {
+          return value.trim() === '';
+        }
+        if (typeof value === 'number') {
+          return isNaN(value);
+        }
+        return false;
+      };
+
+      // Check each weather field
+      if (isEmpty(conditions.windSpeed.initial)) {
+        missingWeatherFields.push('Velocidad del viento inicial');
+      }
+      if (isEmpty(conditions.windSpeed.final)) {
+        missingWeatherFields.push('Velocidad del viento final');
+      }
+      if (isEmpty(conditions.windDirection.initial)) {
+        missingWeatherFields.push('Dirección del viento inicial');
+      }
+      if (isEmpty(conditions.windDirection.final)) {
+        missingWeatherFields.push('Dirección del viento final');
+      }
+      if (isEmpty(conditions.temperature.initial)) {
+        missingWeatherFields.push('Temperatura inicial');
+      }
+      if (isEmpty(conditions.temperature.final)) {
+        missingWeatherFields.push('Temperatura final');
+      }
+      if (isEmpty(conditions.humidity.initial)) {
+        missingWeatherFields.push('Humedad inicial');
+      }
+      if (isEmpty(conditions.humidity.final)) {
+        missingWeatherFields.push('Humedad final');
+      }
+      if (isEmpty(conditions.atmosphericPressure.initial)) {
+        missingWeatherFields.push('Presión atmosférica inicial');
+      }
+      if (isEmpty(conditions.atmosphericPressure.final)) {
+        missingWeatherFields.push('Presión atmosférica final');
+      }
+      if (isEmpty(conditions.precipitation.initial)) {
+        missingWeatherFields.push('Precipitación inicial');
+      }
+      if (isEmpty(conditions.precipitation.final)) {
+        missingWeatherFields.push('Precipitación final');
+      }
+
+      // Add weather validation entry for this schedule
+      results.push({
+        pointId: `weather-${schedule}`,
+        pointName: `Condiciones Meteorológicas`,
+        schedule,
+        measurementType: technicalInfo.measurementType,
+        logarithmicAverage: 0,
+        missingFields: missingWeatherFields.length > 0 ? missingWeatherFields.map(field => `• ${field}`) : [],
+        missingPhotos: [],
+        isComplete: missingWeatherFields.length === 0,
+        hasData: true,
+      });
+    });
+
     return results;
   }, [currentFormat]);
 
@@ -382,12 +522,15 @@ const ResultsSummaryScreen: React.FC<ResultsSummaryScreenProps> = ({ onNavigateT
     return labels[type];
   };
 
-  const handleNavigateToPoint = (pointId: string, schedule: ScheduleType) => {
+  const handleNavigateToPoint = (pointId: string, schedule: ScheduleType, firstMissingInterval?: number | string, isResidual?: boolean) => {
     // Don't navigate for croquis
     if (pointId === 'croquis') return;
 
-    // Set the navigation selection in context
-    setNavigationSelection(pointId, schedule);
+    // Check if this is a weather conditions entry
+    if (pointId.startsWith('weather-')) return;
+
+    // Set the navigation selection in context, including the first missing interval and whether it's residual
+    setNavigationSelection(pointId, schedule, firstMissingInterval, isResidual);
 
     // Navigate to the measurement results page
     onNavigateToResults();
@@ -398,9 +541,17 @@ const ResultsSummaryScreen: React.FC<ResultsSummaryScreenProps> = ({ onNavigateT
     onNavigateToPhotoRegistry();
   };
 
+  const handleNavigateToWeather = (schedule: ScheduleType) => {
+    // Set the schedule for weather navigation
+    setWeatherNavigationSchedule(schedule);
+    // Navigate to weather conditions page
+    onNavigateToWeather();
+  };
+
   const renderValidationCard = (validation: ValidationResult) => {
     const scheduleColor = getScheduleColor(validation.schedule);
     const isCroquis = validation.pointId === 'croquis';
+    const isWeather = validation.pointId.startsWith('weather-');
 
     return (
       <View key={`${validation.pointId}-${validation.schedule}`} style={styles.card}>
@@ -422,15 +573,15 @@ const ResultsSummaryScreen: React.FC<ResultsSummaryScreenProps> = ({ onNavigateT
               </View>
             )}
           </View>
-          {!isCroquis ? (
+          {!isCroquis && !isWeather ? (
             <TouchableOpacity
               style={styles.navigationButton}
-              onPress={() => handleNavigateToPoint(validation.pointId, validation.schedule)}
+              onPress={() => handleNavigateToPoint(validation.pointId, validation.schedule, validation.firstMissingInterval, validation.isResidual)}
             >
               <Text style={styles.navigationButtonText}>Ir al punto</Text>
               <Feather name="arrow-right" size={16} color={COLORS.primary} />
             </TouchableOpacity>
-          ) : (
+          ) : isCroquis ? (
             <TouchableOpacity
               style={styles.navigationButton}
               onPress={handleNavigateToPhotoRegistry}
@@ -438,10 +589,18 @@ const ResultsSummaryScreen: React.FC<ResultsSummaryScreenProps> = ({ onNavigateT
               <Text style={styles.navigationButtonText}>Ir a RF</Text>
               <Feather name="camera" size={16} color={COLORS.primary} />
             </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={styles.navigationButton}
+              onPress={() => handleNavigateToWeather(validation.schedule)}
+            >
+              <Text style={styles.navigationButtonText}>Ir a CM</Text>
+              <Feather name="cloud" size={16} color={COLORS.primary} />
+            </TouchableOpacity>
           )}
         </View>
 
-        {!isCroquis && (
+        {!isCroquis && !isWeather && (
           <View style={styles.measurementTypeRow}>
             <Text style={styles.measurementTypeLabel}>
               {getMeasurementTypeLabel(validation.measurementType)}
@@ -449,7 +608,7 @@ const ResultsSummaryScreen: React.FC<ResultsSummaryScreenProps> = ({ onNavigateT
           </View>
         )}
 
-        {!isCroquis && validation.hasData && validation.logarithmicAverage > 0 && (
+        {!isCroquis && !isWeather && validation.hasData && validation.logarithmicAverage > 0 && (
           <View style={styles.averageContainer}>
             <Text style={styles.averageLabel}>
               {validation.measurementType === 'emission'
@@ -509,6 +668,14 @@ const ResultsSummaryScreen: React.FC<ResultsSummaryScreenProps> = ({ onNavigateT
       <ScrollView style={styles.scrollContainer} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <Text style={styles.title}>Resumen de Resultados</Text>
+
+          <View style={styles.disclaimerContainer}>
+            <Feather name="info" size={16} color={COLORS.info} />
+            <Text style={styles.disclaimerText}>
+              Los resultados presentados son una aproximación y no constituyen necesariamente el resultado final del estudio, el cual está sujeto a cambios por correcciones (K).
+            </Text>
+          </View>
+
           <View style={styles.summaryContainer}>
             <View style={styles.summaryHeader}>
               <Text style={styles.summaryText}>
@@ -570,6 +737,23 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: COLORS.text,
     marginBottom: 16,
+  },
+  disclaimerContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: COLORS.info + '15',
+    borderLeftWidth: 3,
+    borderLeftColor: COLORS.info,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    gap: 10,
+  },
+  disclaimerText: {
+    flex: 1,
+    fontSize: 13,
+    color: COLORS.text,
+    lineHeight: 18,
   },
   summaryContainer: {
     gap: 8,

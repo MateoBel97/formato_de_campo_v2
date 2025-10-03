@@ -146,19 +146,38 @@ export const createPhotosZip = async (
     if (!photos || photos.length === 0) {
       throw new Error('No photos provided for ZIP creation');
     }
-    
+
     if (onProgress) onProgress(0.05);
-    
+
     const filesToZip: FileToZip[] = [];
-    
+
     // Process photos with watermarks
     for (let i = 0; i < photos.length; i++) {
       const photo = photos[i];
-      
+
       try {
-        // Check if photo file exists
-        const photoInfo = await getInfoAsync(photo.uri);
-        if (!photoInfo.exists) {
+        // Check if photo file exists (handle Windows/Web differently)
+        let photoExists = false;
+
+        if (Platform.OS === 'windows') {
+          // For Windows, try using Node.js fs
+          try {
+            const fs = require('fs');
+            photoExists = photo.uri.startsWith('data:') || fs.existsSync(photo.uri);
+          } catch (fsError) {
+            // If fs is not available, assume data URL exists
+            photoExists = photo.uri.startsWith('data:');
+          }
+        } else if (Platform.OS === 'web') {
+          // For web, data URLs always "exist"
+          photoExists = photo.uri.startsWith('data:');
+        } else {
+          // For mobile, use getInfoAsync
+          const photoInfo = await getInfoAsync(photo.uri);
+          photoExists = photoInfo.exists;
+        }
+
+        if (!photoExists) {
           console.warn(`Photo file does not exist: ${photo.uri}`);
           continue;
         }
@@ -247,15 +266,31 @@ FORMATO DE ARCHIVOS:
 - foto_X_con_metadatos.jpg: Imagen procesada
 - info_foto_X.txt: Archivo con metadatos detallados
 `;
-    
-    const tempInfoPath = `${documentDirectory}temp_photos_info.txt`;
-    await writeAsStringAsync(tempInfoPath, infoText);
-    
-    filesToZip.push({
-      path: tempInfoPath,
-      name: 'informacion.txt',
-    });
-    
+
+    // On web, create a data URL for the text file instead of using writeAsStringAsync
+    if (Platform.OS === 'web') {
+      const blob = new Blob([infoText], { type: 'text/plain' });
+      const dataUrl = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(blob);
+      });
+
+      filesToZip.push({
+        path: dataUrl,
+        name: 'informacion.txt',
+      });
+    } else {
+      // For native platforms, use writeAsStringAsync
+      const tempInfoPath = `${documentDirectory}temp_photos_info.txt`;
+      await writeAsStringAsync(tempInfoPath, infoText);
+
+      filesToZip.push({
+        path: tempInfoPath,
+        name: 'informacion.txt',
+      });
+    }
+
     if (onProgress) onProgress(0.6); // After info file creation
     
     // Create ZIP with progress tracking
@@ -265,13 +300,16 @@ FORMATO DE ARCHIVOS:
       if (onProgress) onProgress(mappedProgress);
     });
     
-    // Clean up temporary file
-    try {
-      await deleteAsync(tempInfoPath, { idempotent: true });
-    } catch (error) {
-      console.warn('Failed to delete temporary info file:', error);
+    // Clean up temporary file (only for native platforms)
+    if (Platform.OS !== 'web') {
+      try {
+        const tempInfoPath = `${documentDirectory}temp_photos_info.txt`;
+        await deleteAsync(tempInfoPath, { idempotent: true });
+      } catch (error) {
+        console.warn('Failed to delete temporary info file:', error);
+      }
     }
-    
+
     return zipPath;
     
   } catch (error) {

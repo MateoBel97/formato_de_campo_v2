@@ -1,12 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, Alert, TouchableOpacity, KeyboardAvoidingView, Platform, Keyboard, Dimensions } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, KeyboardAvoidingView, Platform, Keyboard, Dimensions, Alert } from 'react-native';
 import { Formik } from 'formik';
 import * as Yup from 'yup';
 import { Feather } from '@expo/vector-icons';
+import DraggableFlatList, { RenderItemParams, ScaleDecorator } from 'react-native-draggable-flatlist';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useMeasurement } from '../context/MeasurementContext';
 import FormInput from '../components/FormInput';
 import FormButton from '../components/FormButton';
 import LocationPicker from '../components/LocationPicker';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { COLORS } from '../constants';
 import { MeasurementPoint } from '../types';
 import { isValidDMSFormat } from '../utils/numberUtils';
@@ -20,12 +23,14 @@ const validationSchema = Yup.object({
 });
 
 const MeasurementPointsScreen: React.FC = () => {
-  const { state, addMeasurementPoint, deleteMeasurementPoint, updateMeasurementPoint, saveCurrentFormat } = useMeasurement();
+  const { state, addMeasurementPoint, deleteMeasurementPoint, updateMeasurementPoint, reorderMeasurementPoints, saveCurrentFormat } = useMeasurement();
   const [showAddForm, setShowAddForm] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const [editingPoint, setEditingPoint] = useState<MeasurementPoint | null>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
-  
+  const [pointToDelete, setPointToDelete] = useState<MeasurementPoint | null>(null);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+
   const scrollViewRef = useRef<ScrollView>(null);
   const formContainerRef = useRef<View>(null);
   const nameInputRef = useRef<View>(null);
@@ -147,24 +152,15 @@ const MeasurementPointsScreen: React.FC = () => {
   };
 
   const handleDeletePoint = (point: MeasurementPoint) => {
-    Alert.alert(
-      'Confirmar eliminación',
-      `¿Está seguro de que desea eliminar el punto "${point.name}"?`,
-      [
-        {
-          text: 'Cancelar',
-          style: 'cancel',
-        },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: async () => {
-            deleteMeasurementPoint(point.id);
-            await saveCurrentFormat();
-          },
-        },
-      ]
-    );
+    setPointToDelete(point);
+    setShowDeleteDialog(true);
+  };
+
+  const confirmDelete = async () => {
+    if (pointToDelete) {
+      await deleteMeasurementPoint(pointToDelete.id);
+      setPointToDelete(null);
+    }
   };
 
   const handleEditPoint = (point: MeasurementPoint) => {
@@ -174,46 +170,55 @@ const MeasurementPointsScreen: React.FC = () => {
     setTimeout(scrollToForm, 150);
   };
 
-  const renderPointItem = (point: MeasurementPoint, index: number) => (
-    <TouchableOpacity 
-      key={point.id} 
-      style={styles.pointItem}
-      onPress={() => handleEditPoint(point)}
-      activeOpacity={0.7}
-    >
-      <View style={styles.pointHeader}>
-        <View style={styles.pointNumber}>
-          <Text style={styles.pointNumberText}>{index + 1}</Text>
+  const renderPointItem = ({ item, drag, isActive, getIndex }: RenderItemParams<MeasurementPoint>) => {
+    const index = getIndex();
+    return (
+    <ScaleDecorator>
+      <TouchableOpacity
+        style={[
+          styles.pointItem,
+          isActive && styles.pointItemActive,
+        ]}
+        onPress={() => handleEditPoint(item)}
+        activeOpacity={0.7}
+        disabled={isActive}
+      >
+        <View style={styles.pointHeader}>
+          <View style={styles.pointNumber}>
+            <Text style={styles.pointNumberText}>{(index !== undefined ? index : 0) + 1}</Text>
+          </View>
+          <View style={styles.pointInfo}>
+            <Text style={styles.pointName}>{item.name}</Text>
+            <Text style={styles.pointCoordinates}>
+              N: {item.coordinatesN} | W: {item.coordinatesW}
+            </Text>
+          </View>
+          <View style={styles.pointActions}>
+            <TouchableOpacity
+              style={styles.editPointButton}
+              onPress={(e) => {
+                e.stopPropagation();
+                handleEditPoint(item);
+              }}
+            >
+              <Feather name="edit-2" size={20} color={COLORS.primary} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.deletePointButton}
+              onPress={(e) => {
+                e.stopPropagation();
+                handleDeletePoint(item);
+              }}
+            >
+              <Feather name="trash-2" size={20} color={COLORS.error} />
+            </TouchableOpacity>
+            {/* Drag handle removed from UI - functionality preserved in code */}
+          </View>
         </View>
-        <View style={styles.pointInfo}>
-          <Text style={styles.pointName}>{point.name}</Text>
-          <Text style={styles.pointCoordinates}>
-            N: {point.coordinatesN} | W: {point.coordinatesW}
-          </Text>
-        </View>
-        <View style={styles.pointActions}>
-          <TouchableOpacity
-            style={styles.editPointButton}
-            onPress={(e) => {
-              e.stopPropagation();
-              handleEditPoint(point);
-            }}
-          >
-            <Feather name="edit-2" size={20} color={COLORS.primary} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.deletePointButton}
-            onPress={(e) => {
-              e.stopPropagation();
-              handleDeletePoint(point);
-            }}
-          >
-            <Feather name="trash-2" size={20} color={COLORS.error} />
-          </TouchableOpacity>
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
+      </TouchableOpacity>
+    </ScaleDecorator>
+    );
+  };
 
   const renderEmptyState = () => (
     <View style={styles.emptyState}>
@@ -233,35 +238,20 @@ const MeasurementPointsScreen: React.FC = () => {
     );
   }
 
-  return (
-    <View style={styles.container}>
-      <ScrollView 
-        ref={scrollViewRef}
-        style={styles.scrollContainer} 
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={[
-          styles.scrollContentContainer,
-          { paddingBottom: keyboardHeight > 0 ? keyboardHeight + 50 : 50 }
-        ]}
-      >
-        <View style={styles.content}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Puntos de Medición</Text>
-          <Text style={styles.subtitle}>
-            {measurementPoints.length} punto{measurementPoints.length !== 1 ? 's' : ''} agregado{measurementPoints.length !== 1 ? 's' : ''}
-          </Text>
-        </View>
+  const renderListHeader = () => (
+    <View style={styles.content}>
+      <View style={styles.header}>
+        <Text style={styles.title}>Puntos de Medición</Text>
+        <Text style={styles.subtitle}>
+          {measurementPoints.length} punto{measurementPoints.length !== 1 ? 's' : ''} agregado{measurementPoints.length !== 1 ? 's' : ''}
+        </Text>
+      </View>
+    </View>
+  );
 
-        {measurementPoints.length === 0 ? (
-          renderEmptyState()
-        ) : (
-          <View style={styles.pointsList}>
-            {measurementPoints.map((point, index) => renderPointItem(point, index))}
-          </View>
-        )}
-
-        {!showAddForm && !editingPoint ? (
+  const renderListFooter = () => (
+    <View style={styles.content}>
+      {!showAddForm && !editingPoint ? (
           <FormButton
             title="Agregar Punto de Medición"
             onPress={() => {
@@ -346,9 +336,81 @@ const MeasurementPointsScreen: React.FC = () => {
             </Formik>
           </View>
         )}
-      </View>
-    </ScrollView>
     </View>
+  );
+
+  if (measurementPoints.length === 0) {
+    return (
+      <GestureHandlerRootView style={styles.container}>
+        <ScrollView
+          ref={scrollViewRef}
+          style={styles.scrollContainer}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={[
+            styles.scrollContentContainer,
+            { paddingBottom: keyboardHeight > 0 ? keyboardHeight + 50 : 50 }
+          ]}
+        >
+          <View style={styles.content}>
+            <View style={styles.header}>
+              <Text style={styles.title}>Puntos de Medición</Text>
+              <Text style={styles.subtitle}>
+                0 puntos agregados
+              </Text>
+            </View>
+            {renderEmptyState()}
+            {renderListFooter()}
+          </View>
+        </ScrollView>
+
+        <ConfirmDialog
+          visible={showDeleteDialog}
+          title="Confirmar eliminación"
+          message={`¿Está seguro de que desea eliminar el punto "${pointToDelete?.name || 'Sin nombre'}"?`}
+          confirmText="Eliminar"
+          cancelText="Cancelar"
+          onConfirm={confirmDelete}
+          onCancel={() => {
+            setShowDeleteDialog(false);
+            setPointToDelete(null);
+          }}
+          confirmColor={COLORS.error}
+          icon="trash-2"
+        />
+      </GestureHandlerRootView>
+    );
+  }
+
+  return (
+    <GestureHandlerRootView style={styles.container}>
+      <DraggableFlatList
+        data={measurementPoints}
+        renderItem={renderPointItem}
+        keyExtractor={(item) => item.id}
+        onDragEnd={({ data }) => reorderMeasurementPoints(data)}
+        ListHeaderComponent={renderListHeader}
+        ListFooterComponent={renderListFooter}
+        contentContainerStyle={{ paddingBottom: keyboardHeight > 0 ? keyboardHeight + 50 : 50 }}
+        showsVerticalScrollIndicator={false}
+      />
+
+      <ConfirmDialog
+      visible={showDeleteDialog}
+      title="Confirmar eliminación"
+      message={`¿Está seguro de que desea eliminar el punto "${pointToDelete?.name || 'Sin nombre'}"?`}
+      confirmText="Eliminar"
+      cancelText="Cancelar"
+      useHoldToDelete={true}
+      onConfirm={confirmDelete}
+      onCancel={() => {
+        setShowDeleteDialog(false);
+        setPointToDelete(null);
+      }}
+      confirmColor={COLORS.error}
+      icon="trash-2"
+    />
+    </GestureHandlerRootView>
   );
 };
 
@@ -389,6 +451,17 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     borderWidth: 1,
     borderColor: COLORS.border,
+  },
+  pointItemActive: {
+    opacity: 0.8,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 4.65,
   },
   pointHeader: {
     flexDirection: 'row',
@@ -431,6 +504,10 @@ const styles = StyleSheet.create({
   },
   deletePointButton: {
     padding: 8,
+  },
+  dragHandle: {
+    padding: 8,
+    marginLeft: 4,
   },
   addButton: {
     marginBottom: 32,

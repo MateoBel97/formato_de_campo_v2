@@ -205,18 +205,13 @@ const PhotoRegistryScreen = forwardRef<PhotoRegistryScreenRef>((props, ref) => {
 
   // Function to process photo capture common logic
   const processPhotoCapture = async (photoUri: string, pointId?: string, schedule?: ScheduleType, photoType: 'measurement' | 'croquis' = 'measurement', uploadKey?: string) => {
-    console.log('=== Process Photo Capture START ===');
-    console.log('Photo URI:', photoUri);
-    console.log('Point ID:', pointId);
-    console.log('Schedule:', schedule);
-    console.log('Photo Type:', photoType);
+    console.log('📷 [PHOTO] Processing capture - Type:', photoType);
 
     // Copy image to permanent storage
     let permanentUri: string;
     try {
-      console.log('Calling copyImageToPermanentStorage...');
       permanentUri = await copyImageToPermanentStorage(photoUri);
-      console.log('Image copied to permanent storage:', permanentUri);
+      console.log('📷 [PHOTO] Copied to storage');
     } catch (copyError) {
       console.error('=== COPY ERROR ===');
       console.error('Failed to copy image to permanent storage:', copyError);
@@ -241,14 +236,11 @@ const PhotoRegistryScreen = forwardRef<PhotoRegistryScreenRef>((props, ref) => {
       throw copyError; // Re-throw to stop processing
     }
 
-    console.log('=== Process Photo Capture CONTINUE ===');
-
     const timestamp = new Date().toISOString();
 
     // Try to get GPS location immediately
     let location = null;
     try {
-      console.log('Getting GPS location immediately...');
       const locationResult = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Low,
         timeInterval: 5000, // 5 second timeout
@@ -257,9 +249,9 @@ const PhotoRegistryScreen = forwardRef<PhotoRegistryScreenRef>((props, ref) => {
         latitude: locationResult.coords.latitude,
         longitude: locationResult.coords.longitude,
       };
-      console.log('GPS obtained immediately:', location);
+      console.log('📍 [PHOTO] GPS obtained');
     } catch (locationError) {
-      console.log('Could not get GPS immediately, will try in background:', locationError);
+      console.log('📍 [PHOTO] GPS not available, will retry in background');
     }
 
     // Create photo with location if available (use permanent URI)
@@ -273,22 +265,17 @@ const PhotoRegistryScreen = forwardRef<PhotoRegistryScreenRef>((props, ref) => {
       type: photoType,
     };
 
-    console.log('=== Adding Photo ===');
-    console.log('Adding new photo:', tempPhoto.id, tempPhoto.type);
-    console.log('Photos before addition:', state.currentFormat?.photos?.length || 0);
-    console.log('Photo IDs before addition:', state.currentFormat?.photos?.map(p => p.id) || []);
+    console.log('📸 [PHOTO] Created photo object with URI type:', permanentUri.substring(0, 50) + '...');
+    console.log('📸 [PHOTO] URI length:', permanentUri.length);
+    console.log('📸 [PHOTO] Is data URL?', permanentUri.startsWith('data:'));
+    console.log('📸 [PHOTO] Is blob URL?', permanentUri.startsWith('blob:'));
 
     const saveSuccess = await addPhoto(tempPhoto);
 
-    console.log('Add success:', saveSuccess);
-    console.log('Photos after addition attempt:', state.currentFormat?.photos?.length || 0);
-    console.log('Photo IDs after addition:', state.currentFormat?.photos?.map(p => p.id) || []);
-    console.log('=== End Add Photo ===');
-
     if (saveSuccess) {
-      console.log('Photo added and saved successfully');
+      console.log('✅ [PHOTO] Added and saved');
     } else {
-      console.warn('Photo added to memory but may not be saved permanently');
+      console.warn('⚠️ [PHOTO] Added but may not be saved');
       Alert.alert(
         'Advertencia de Guardado',
         'La foto se agregó pero puede que no se haya guardado correctamente. Asegúrese de guardar manualmente el formulario.',
@@ -310,12 +297,12 @@ const PhotoRegistryScreen = forwardRef<PhotoRegistryScreenRef>((props, ref) => {
             longitude: locationResult.coords.longitude,
           };
 
-          console.log('GPS obtained in background:', backgroundLocation);
+          console.log('📍 [PHOTO] GPS obtained in background');
 
           // Update photo with location
           const updateSuccess = await updatePhoto(tempPhoto.id, { location: backgroundLocation });
           if (updateSuccess) {
-            console.log('Photo location updated successfully in background');
+            console.log('✅ [PHOTO] Location updated');
           } else {
             console.warn('Photo location update may not have been saved permanently');
           }
@@ -347,7 +334,6 @@ const PhotoRegistryScreen = forwardRef<PhotoRegistryScreenRef>((props, ref) => {
         return;
       }
 
-      console.log('Taking photo with native camera...');
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: false,
@@ -370,7 +356,6 @@ const PhotoRegistryScreen = forwardRef<PhotoRegistryScreenRef>((props, ref) => {
         throw new Error('Invalid image URI received from camera');
       }
 
-      console.log('Photo captured successfully, URI:', photoUri);
       await processPhotoCapture(photoUri, pointId, schedule, photoType, uploadKey);
 
     } catch (error) {
@@ -429,7 +414,6 @@ const PhotoRegistryScreen = forwardRef<PhotoRegistryScreenRef>((props, ref) => {
         return;
       }
 
-      console.log('Selecting photo from gallery...');
 
       let result;
       try {
@@ -450,12 +434,7 @@ const PhotoRegistryScreen = forwardRef<PhotoRegistryScreenRef>((props, ref) => {
         throw pickerError;
       }
 
-      console.log('=== Image Picker Result ===');
-      console.log('Result:', JSON.stringify(result, null, 2));
-      console.log('=== End Result ===');
-
       if (result.canceled) {
-        console.log('User cancelled image selection');
         return; // User cancelled
       }
 
@@ -470,13 +449,6 @@ const PhotoRegistryScreen = forwardRef<PhotoRegistryScreenRef>((props, ref) => {
         throw new Error('Invalid image URI received from gallery');
       }
 
-      console.log('=== Photo Selection Debug ===');
-      console.log('Photo selected successfully');
-      console.log('URI received from picker:', photoUri);
-      console.log('URI type:', typeof photoUri);
-      console.log('URI length:', photoUri.length);
-      console.log('First 50 chars:', photoUri.substring(0, 50));
-      console.log('=== End Debug ===');
 
       await processPhotoCapture(photoUri, pointId, schedule, photoType, uploadKey);
 
@@ -677,14 +649,6 @@ const PhotoRegistryScreen = forwardRef<PhotoRegistryScreenRef>((props, ref) => {
   const combinations = getPointScheduleCombinations();
   const croquisPhotos = getCroquisPhotos();
   
-  console.log('=== PhotoRegistryScreen Render Debug ===');
-  console.log('Current format ID:', state.currentFormat?.id);
-  console.log('Current format photos:', state.currentFormat?.photos?.length || 0);
-  console.log('Current format photo IDs:', state.currentFormat?.photos?.map(p => p.id) || []);
-  console.log('Point-schedule combinations:', combinations.length);
-  console.log('Croquis photos:', croquisPhotos.length);
-  console.log('Croquis photo IDs:', croquisPhotos.map(p => p.id));
-  console.log('=== End PhotoRegistry Debug ===');
 
   return (
     <ScrollView
@@ -763,23 +727,32 @@ const PhotoRegistryScreen = forwardRef<PhotoRegistryScreenRef>((props, ref) => {
                             onPress={() => setSelectedPhoto(photo)}
                             style={styles.photoThumbnail}
                           >
-                            <Image 
-                              source={{ uri: photo.uri }} 
-                              style={styles.photo}
-                              onError={(error) => {
-                                console.error('Error loading image:', error);
-                                Alert.alert(
-                                  'Error de Imagen',
-                                  'No se pudo cargar la imagen. Es posible que el archivo se haya movido o eliminado.',
-                                  [
-                                    { text: 'OK' }
-                                  ]
-                                );
-                              }}
-                              onLoad={() => {
-                                console.log('Image loaded successfully:', photo.uri);
-                              }}
-                            />
+                            {photo._blobUrlLost || !photo.uri ? (
+                              <View style={[styles.photo, styles.photoPlaceholder]}>
+                                <Feather name="image" size={40} color={COLORS.textSecondary} />
+                                <Text style={styles.photoLostText}>Foto no disponible</Text>
+                                <Text style={styles.photoLostSubtext}>
+                                  {formatTimestamp(photo.timestamp)}
+                                </Text>
+                              </View>
+                            ) : (
+                              <Image
+                                source={{ uri: photo.uri }}
+                                style={styles.photo}
+                                onError={(error) => {
+                                  console.error('Error loading image:', error);
+                                  Alert.alert(
+                                    'Error de Imagen',
+                                    'No se pudo cargar la imagen. Es posible que el archivo se haya movido o eliminado.',
+                                    [
+                                      { text: 'OK' }
+                                    ]
+                                  );
+                                }}
+                                onLoad={() => {
+                                }}
+                              />
+                            )}
                           </TouchableOpacity>
                           <TouchableOpacity
                             style={styles.deleteButton}
@@ -897,21 +870,30 @@ const PhotoRegistryScreen = forwardRef<PhotoRegistryScreenRef>((props, ref) => {
                       onPress={() => setSelectedPhoto(photo)}
                       style={styles.photoThumbnail}
                     >
-                      <Image 
-                        source={{ uri: photo.uri }} 
-                        style={styles.photo}
-                        onError={(error) => {
-                          console.error('Error loading croquis image:', error);
-                          Alert.alert(
-                            'Error de Imagen',
-                            'No se pudo cargar la imagen del croquis. Es posible que el archivo se haya movido o eliminado.',
-                            [{ text: 'OK' }]
-                          );
-                        }}
-                        onLoad={() => {
-                          console.log('Croquis image loaded successfully:', photo.uri);
-                        }}
-                      />
+                      {photo._blobUrlLost || !photo.uri ? (
+                        <View style={[styles.photo, styles.photoPlaceholder]}>
+                          <Feather name="image" size={40} color={COLORS.textSecondary} />
+                          <Text style={styles.photoLostText}>Foto no disponible</Text>
+                          <Text style={styles.photoLostSubtext}>
+                            {formatTimestamp(photo.timestamp)}
+                          </Text>
+                        </View>
+                      ) : (
+                        <Image
+                          source={{ uri: photo.uri }}
+                          style={styles.photo}
+                          onError={(error) => {
+                            console.error('Error loading croquis image:', error);
+                            Alert.alert(
+                              'Error de Imagen',
+                              'No se pudo cargar la imagen del croquis. Es posible que el archivo se haya movido o eliminado.',
+                              [{ text: 'OK' }]
+                            );
+                          }}
+                          onLoad={() => {
+                          }}
+                        />
+                      )}
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={styles.deleteButton}
@@ -1015,21 +997,34 @@ const PhotoRegistryScreen = forwardRef<PhotoRegistryScreenRef>((props, ref) => {
                 </TouchableOpacity>
               </View>
 
-              <Image
-                source={{ uri: selectedPhoto.uri }}
-                style={styles.modalPhoto}
-                onError={(error) => {
-                  console.error('Error loading modal image:', error);
-                  Alert.alert(
-                    'Error de Imagen',
-                    'No se pudo cargar la imagen en detalle. Es posible que el archivo se haya movido o eliminado.',
-                    [
-                      { text: 'OK', onPress: () => setSelectedPhoto(null) }
-                    ]
-                  );
-                }}
-                resizeMode="contain"
-              />
+              {selectedPhoto._blobUrlLost || !selectedPhoto.uri ? (
+                <View style={[styles.modalPhoto, styles.modalPhotoPlaceholder]}>
+                  <Feather name="image" size={80} color={COLORS.textSecondary} />
+                  <Text style={styles.modalPhotoLostText}>Foto no disponible</Text>
+                  <Text style={styles.modalPhotoLostSubtext}>
+                    Esta foto se guardó con un formato temporal que ya no está disponible.
+                  </Text>
+                  <Text style={styles.modalPhotoLostSubtext}>
+                    Para evitar esto en el futuro, asegúrese de exportar los datos regularmente.
+                  </Text>
+                </View>
+              ) : (
+                <Image
+                  source={{ uri: selectedPhoto.uri }}
+                  style={styles.modalPhoto}
+                  onError={(error) => {
+                    console.error('Error loading modal image:', error);
+                    Alert.alert(
+                      'Error de Imagen',
+                      'No se pudo cargar la imagen en detalle. Es posible que el archivo se haya movido o eliminado.',
+                      [
+                        { text: 'OK', onPress: () => setSelectedPhoto(null) }
+                      ]
+                    );
+                  }}
+                  resizeMode="contain"
+                />
+              )}
 
               <View style={styles.photoDetails}>
                 <Text style={styles.detailLabel}>Fecha y Hora:</Text>
@@ -1061,6 +1056,7 @@ const PhotoRegistryScreen = forwardRef<PhotoRegistryScreenRef>((props, ref) => {
         message="¿Estás seguro de que deseas eliminar esta foto? Esta acción no se puede deshacer."
         confirmText="Eliminar"
         cancelText="Cancelar"
+        useHoldToDelete={true}
         onConfirm={() => {
           if (photoToDelete) {
             confirmDeletePhoto(photoToDelete);
@@ -1183,6 +1179,24 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
+  photoPlaceholder: {
+    backgroundColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 4,
+  },
+  photoLostText: {
+    fontSize: 9,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  photoLostSubtext: {
+    fontSize: 7,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    marginTop: 2,
+  },
   deleteButton: {
     position: 'absolute',
     top: -4,
@@ -1292,6 +1306,25 @@ const styles = StyleSheet.create({
     height: 200,
     borderRadius: 8,
     marginBottom: 16,
+  },
+  modalPhotoPlaceholder: {
+    backgroundColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalPhotoLostText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.textSecondary,
+    marginTop: 12,
+    textAlign: 'center',
+  },
+  modalPhotoLostSubtext: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    marginTop: 8,
+    textAlign: 'center',
+    paddingHorizontal: 16,
   },
   photoDetails: {
     gap: 8,

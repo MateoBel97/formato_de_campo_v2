@@ -45,10 +45,16 @@ const FormInput: React.FC<FormInputProps> = ({
     if (shouldSelectTextOnFocus && inputRef.current) {
       // Use setTimeout to ensure the input is fully focused before selecting text
       setTimeout(() => {
-        inputRef.current?.setSelection(0, props.value?.toString().length || 0);
+        if (Platform.OS === 'web') {
+          // For web, use the select() method
+          (inputRef.current as any)?.select?.();
+        } else {
+          // For native, use setSelection
+          inputRef.current?.setSelection?.(0, props.value?.toString().length || 0);
+        }
       }, 100);
     }
-    
+
     // Call original onFocus if provided (but only if explicitly passed)
     if (onFocus) {
       onFocus(e);

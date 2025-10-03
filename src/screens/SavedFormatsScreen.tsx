@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, SafeAreaView, Alert, Modal, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, SafeAreaView, Modal, ActivityIndicator, Platform } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { Feather } from '@expo/vector-icons';
@@ -13,6 +13,7 @@ import {
 import * as Sharing from 'expo-sharing';
 import { useMeasurement } from '../context/MeasurementContext';
 import FormButton from '../components/FormButton';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { MeasurementFormat } from '../types';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { COLORS } from '../constants';
@@ -38,6 +39,8 @@ const SavedFormatsScreen: React.FC = () => {
   const [showExportModal, setShowExportModal] = useState(false);
   const [loading, setLoading] = useState<string | null>(null);
   const [exportProgress, setExportProgress] = useState<number>(0);
+  const [formatToDelete, setFormatToDelete] = useState<MeasurementFormat | null>(null);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   useEffect(() => {
     loadSavedFormats();
@@ -49,21 +52,15 @@ const SavedFormatsScreen: React.FC = () => {
   };
 
   const handleDeleteFormat = (measurementFormat: MeasurementFormat) => {
-    Alert.alert(
-      'Confirmar eliminación',
-      `¿Está seguro de que desea eliminar el formato "${measurementFormat.generalInfo.company}"?`,
-      [
-        {
-          text: 'Cancelar',
-          style: 'cancel',
-        },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: () => deleteFormat(measurementFormat.id),
-        },
-      ]
-    );
+    setFormatToDelete(measurementFormat);
+    setShowDeleteDialog(true);
+  };
+
+  const confirmDelete = () => {
+    if (formatToDelete) {
+      deleteFormat(formatToDelete.id);
+      setFormatToDelete(null);
+    }
   };
 
   const handleShareFormat = (measurementFormat: MeasurementFormat) => {
@@ -98,8 +95,23 @@ const SavedFormatsScreen: React.FC = () => {
   const exportFormat = async (measurementFormat: MeasurementFormat): Promise<string> => {
     const fileName = generateFileName(measurementFormat, 'formato');
     const jsonContent = JSON.stringify(measurementFormat, null, 2);
+
+    // For web, download directly using browser API
+    if (Platform.OS === 'web' || Platform.OS === 'windows') {
+      const blob = new Blob([jsonContent], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${fileName}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      return `${fileName}.json`;
+    }
+
+    // For mobile, use file system
     const fileUri = `${documentDirectory}${fileName}.json`;
-    
     await writeAsStringAsync(fileUri, jsonContent);
     return fileUri;
   };
@@ -111,43 +123,103 @@ const SavedFormatsScreen: React.FC = () => {
 
     const baseName = generateFileName(measurementFormat, 'fotos');
     const zipPath = `${documentDirectory}${baseName}.zip`;
-    
-    try {
-      await deleteAsync(zipPath, { idempotent: true });
-    } catch (error) {
-      console.warn('Could not delete existing ZIP file:', error);
+
+    // Clean up any existing ZIP file (mobile only)
+    if (Platform.OS !== 'web' && Platform.OS !== 'windows') {
+      try {
+        await deleteAsync(zipPath, { idempotent: true });
+      } catch (error) {
+        console.warn('Could not delete existing ZIP file:', error);
+      }
     }
-    
-    const photosForZip: Array<{ uri: string; pointName: string; schedule: string; index: number; timestamp: string }> = [];
-    
-    const photosByPointSchedule = measurementFormat.photos.reduce((acc, photo) => {
+
+    const photosForZip: Array<{ uri: string; pointName: string; schedule: string; index: number; timestamp: string; location?: { latitude: number; longitude: number } | null }> = [];
+
+    // Separar fotos por tipo
+    const measurementPhotos = measurementFormat.photos.filter(photo => photo.type === 'measurement');
+    const croquisPhotos = measurementFormat.photos.filter(photo => photo.type === 'croquis');
+
+    // Organizar fotos de medición por punto y horario
+    const photosByPointSchedule = measurementPhotos.reduce((acc, photo) => {
       const key = `${photo.pointId}_${photo.schedule}`;
       if (!acc[key]) acc[key] = [];
       acc[key].push(photo);
       return acc;
-    }, {} as Record<string, typeof measurementFormat.photos>);
+    }, {} as Record<string, typeof measurementPhotos>);
 
+    // Preparar array para ZIP
     for (const [key, photos] of Object.entries(photosByPointSchedule)) {
       const [pointId, schedule] = key.split('_');
       const point = measurementFormat.measurementPoints.find(p => p.id === pointId);
       const pointName = point?.name || `Punto_${pointId}`;
-      
+
       for (let index = 0; index < photos.length; index++) {
         const photo = photos[index];
-        
+
+        // For web, skip validation (data URLs are already in memory)
+        if (Platform.OS === 'web' || Platform.OS === 'windows') {
+          photosForZip.push({
+            uri: photo.uri,
+            pointName,
+            schedule,
+            index,
+            timestamp: photo.timestamp,
+            location: photo.location,
+          });
+        } else {
+          // Validate photo file exists before adding to queue (mobile only)
+          try {
+            const photoInfo = await getInfoAsync(photo.uri);
+            if (photoInfo.exists && photoInfo.size && photoInfo.size > 0) {
+              photosForZip.push({
+                uri: photo.uri,
+                pointName,
+                schedule,
+                index,
+                timestamp: photo.timestamp,
+                location: photo.location,
+              });
+            } else {
+              console.warn(`Skipping invalid photo: ${photo.uri}`);
+            }
+          } catch (error) {
+            console.warn(`Error validating photo ${photo.uri}:`, error);
+          }
+        }
+      }
+    }
+
+    // Agregar fotos de croquis
+    for (let index = 0; index < croquisPhotos.length; index++) {
+      const photo = croquisPhotos[index];
+
+      // For web, skip validation
+      if (Platform.OS === 'web' || Platform.OS === 'windows') {
+        photosForZip.push({
+          uri: photo.uri,
+          pointName: 'Croquis',
+          schedule: 'general',
+          index,
+          timestamp: photo.timestamp,
+          location: photo.location,
+        });
+      } else {
         try {
           const photoInfo = await getInfoAsync(photo.uri);
           if (photoInfo.exists && photoInfo.size && photoInfo.size > 0) {
             photosForZip.push({
               uri: photo.uri,
-              pointName,
-              schedule,
+              pointName: 'Croquis',
+              schedule: 'general',
               index,
               timestamp: photo.timestamp,
+              location: photo.location,
             });
+          } else {
+            console.warn(`Skipping invalid croquis photo: ${photo.uri}`);
           }
         } catch (error) {
-          console.warn(`Error validating photo ${photo.uri}:`, error);
+          console.warn(`Error validating croquis photo ${photo.uri}:`, error);
         }
       }
     }
@@ -156,40 +228,88 @@ const SavedFormatsScreen: React.FC = () => {
       throw new Error('No se encontraron fotos válidas para exportar');
     }
 
-    await createPhotosZip(photosForZip, zipPath, (progress) => {
+    // Crear ZIP con progreso
+    const result = await createPhotosZip(photosForZip, zipPath, (progress) => {
       setExportProgress(progress * 100);
     });
-    
-    return zipPath;
+
+    // For web, download the base64 ZIP
+    if (Platform.OS === 'web' || Platform.OS === 'windows') {
+      // Convert base64 to blob and download
+      const byteCharacters = atob(result);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'application/zip' });
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${baseName}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      return `${baseName}.zip`;
+    }
+
+    return result;
   };
 
   const exportAll = async (measurementFormat: MeasurementFormat): Promise<string> => {
     const baseName = generateFileName(measurementFormat, 'completo');
     const zipPath = `${documentDirectory}${baseName}.zip`;
-    
-    try {
-      await deleteAsync(zipPath, { idempotent: true });
-    } catch (error) {
-      console.warn('Could not delete existing ZIP file:', error);
+
+    // Clean up any existing ZIP file (mobile only)
+    if (Platform.OS !== 'web' && Platform.OS !== 'windows') {
+      try {
+        await deleteAsync(zipPath, { idempotent: true });
+      } catch (error) {
+        console.warn('Could not delete existing ZIP file:', error);
+      }
     }
-    
+
     const filesToZip: FileToZip[] = [];
 
     const jsonContent = JSON.stringify(measurementFormat, null, 2);
-    const tempJsonPath = `${documentDirectory}temp_formato_complete.json`;
-    await writeAsStringAsync(tempJsonPath, jsonContent);
-    filesToZip.push({
-      path: tempJsonPath,
-      name: 'formato_campo.json',
-    });
+
+    // For web, create JSON as data URL
+    if (Platform.OS === 'web') {
+      const blob = new Blob([jsonContent], { type: 'application/json' });
+      const dataUrl = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(blob);
+      });
+
+      filesToZip.push({
+        path: dataUrl,
+        name: 'formato_campo.json',
+      });
+    } else {
+      // For native platforms, write to file system
+      const tempJsonPath = `${documentDirectory}temp_formato_complete.json`;
+      await writeAsStringAsync(tempJsonPath, jsonContent);
+      filesToZip.push({
+        path: tempJsonPath,
+        name: 'formato_campo.json',
+      });
+    }
 
     if (measurementFormat.photos.length > 0) {
-      const photosByPointSchedule = measurementFormat.photos.reduce((acc, photo) => {
+      // Separar fotos por tipo
+      const measurementPhotos = measurementFormat.photos.filter(photo => photo.type === 'measurement');
+      const croquisPhotos = measurementFormat.photos.filter(photo => photo.type === 'croquis');
+
+      // Organizar fotos de medición por punto y horario
+      const photosByPointSchedule = measurementPhotos.reduce((acc, photo) => {
         const key = `${photo.pointId}_${photo.schedule}`;
         if (!acc[key]) acc[key] = [];
         acc[key].push(photo);
         return acc;
-      }, {} as Record<string, typeof measurementFormat.photos>);
+      }, {} as Record<string, typeof measurementPhotos>);
 
       for (const [key, photos] of Object.entries(photosByPointSchedule)) {
         const [pointId, schedule] = key.split('_');
@@ -197,21 +317,58 @@ const SavedFormatsScreen: React.FC = () => {
         const pointName = point?.name || `Punto_${pointId}`;
         const scheduleName = schedule === 'diurnal' ? 'Diurno' : 'Nocturno';
         const folderName = `fotos/${pointName}_${scheduleName}`;
-        
+
         for (let index = 0; index < photos.length; index++) {
           const photo = photos[index];
-          
+
+          // For web, skip validation
+          if (Platform.OS === 'web' || Platform.OS === 'windows') {
+            const fileName = `foto_${index + 1}_${new Date(photo.timestamp).getTime()}.jpg`;
+            filesToZip.push({
+              path: photo.uri,
+              name: `${folderName}/${fileName}`,
+            });
+          } else {
+            // For mobile, validate file exists
+            try {
+              const photoInfo = await getInfoAsync(photo.uri);
+              if (photoInfo.exists && photoInfo.size && photoInfo.size > 0) {
+                const fileName = `foto_${index + 1}_${new Date(photo.timestamp).getTime()}.jpg`;
+                filesToZip.push({
+                  path: photo.uri,
+                  name: `${folderName}/${fileName}`,
+                });
+              }
+            } catch (error) {
+              console.warn(`Error validating photo ${photo.uri}:`, error);
+            }
+          }
+        }
+      }
+
+      // Agregar fotos de croquis
+      for (let index = 0; index < croquisPhotos.length; index++) {
+        const photo = croquisPhotos[index];
+
+        // For web, skip validation
+        if (Platform.OS === 'web' || Platform.OS === 'windows') {
+          const fileName = `croquis_${index + 1}_${new Date(photo.timestamp).getTime()}.jpg`;
+          filesToZip.push({
+            path: photo.uri,
+            name: `fotos/Croquis/${fileName}`,
+          });
+        } else {
           try {
             const photoInfo = await getInfoAsync(photo.uri);
             if (photoInfo.exists && photoInfo.size && photoInfo.size > 0) {
-              const fileName = `foto_${index + 1}_${new Date(photo.timestamp).getTime()}.jpg`;
+              const fileName = `croquis_${index + 1}_${new Date(photo.timestamp).getTime()}.jpg`;
               filesToZip.push({
                 path: photo.uri,
-                name: `${folderName}/${fileName}`,
+                name: `fotos/Croquis/${fileName}`,
               });
             }
           } catch (error) {
-            console.warn(`Error validating photo ${photo.uri}:`, error);
+            console.warn(`Error validating croquis photo ${photo.uri}:`, error);
           }
         }
       }
@@ -226,26 +383,69 @@ Archivos incluidos:
 - fotos/: Carpeta con fotos organizadas por punto y horario
 
 Generado: ${new Date().toLocaleString('es-ES')}`;
-    
-    const tempInfoPath = `${documentDirectory}temp_info_complete.txt`;
-    await writeAsStringAsync(tempInfoPath, infoContent);
-    filesToZip.push({
-      path: tempInfoPath,
-      name: 'informacion.txt',
-    });
 
-    await createZipFile(filesToZip, zipPath, (progress) => {
+    // For web, create info file as data URL
+    if (Platform.OS === 'web') {
+      const blob = new Blob([infoContent], { type: 'text/plain' });
+      const dataUrl = await new Promise<string>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(blob);
+      });
+
+      filesToZip.push({
+        path: dataUrl,
+        name: 'informacion.txt',
+      });
+    } else {
+      // For native platforms, write to file system
+      const tempInfoPath = `${documentDirectory}temp_info_complete.txt`;
+      await writeAsStringAsync(tempInfoPath, infoContent);
+      filesToZip.push({
+        path: tempInfoPath,
+        name: 'informacion.txt',
+      });
+    }
+
+    const result = await createZipFile(filesToZip, zipPath, (progress) => {
       setExportProgress(progress * 100);
     });
 
-    try {
-      await deleteAsync(tempJsonPath, { idempotent: true });
-      await deleteAsync(tempInfoPath, { idempotent: true });
-    } catch (error) {
-      console.warn('Error cleaning up temporary files:', error);
+    // Clean up temp files (only for native platforms)
+    if (Platform.OS !== 'web') {
+      try {
+        const tempJsonPath = `${documentDirectory}temp_formato_complete.json`;
+        const tempInfoPath = `${documentDirectory}temp_info_complete.txt`;
+        await deleteAsync(tempJsonPath, { idempotent: true });
+        await deleteAsync(tempInfoPath, { idempotent: true });
+      } catch (error) {
+        console.warn('Error cleaning up temporary files:', error);
+      }
     }
-    
-    return zipPath;
+
+    // For web, download the base64 ZIP
+    if (Platform.OS === 'web' || Platform.OS === 'windows') {
+      // Convert base64 to blob and download
+      const byteCharacters = atob(result);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'application/zip' });
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${baseName}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      return `${baseName}.zip`;
+    }
+
+    return result;
   };
 
   const handleExport = async (optionId: 'all' | 'format' | 'photos') => {
@@ -396,7 +596,7 @@ Generado: ${new Date().toLocaleString('es-ES')}`;
   );
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
@@ -408,14 +608,27 @@ Generado: ${new Date().toLocaleString('es-ES')}`;
         <View style={styles.placeholder} />
       </View>
 
-      <FlatList
-        data={state.savedFormats.sort((a, b) => new Date(b.createdAt || b.updatedAt).getTime() - new Date(a.createdAt || a.updatedAt).getTime())}
-        renderItem={renderFormatItem}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContainer}
-        ListEmptyComponent={renderEmptyState}
-        showsVerticalScrollIndicator={false}
-      />
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContentContainer}
+        showsVerticalScrollIndicator={true}
+        scrollEnabled={true}
+        nestedScrollEnabled={true}
+      >
+        <View style={styles.content}>
+          {state.savedFormats.length === 0 ? (
+            renderEmptyState()
+          ) : (
+            state.savedFormats
+              .sort((a, b) => new Date(b.createdAt || b.updatedAt).getTime() - new Date(a.createdAt || a.updatedAt).getTime())
+              .map((item) => (
+                <View key={item.id}>
+                  {renderFormatItem({ item })}
+                </View>
+              ))
+          )}
+        </View>
+      </ScrollView>
 
       <Modal
         visible={showExportModal}
@@ -473,15 +686,39 @@ Generado: ${new Date().toLocaleString('es-ES')}`;
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+
+      <ConfirmDialog
+        visible={showDeleteDialog}
+        title="Confirmar eliminación"
+        message={`¿Está seguro de que desea eliminar el formato "${formatToDelete?.generalInfo.company || 'Sin nombre'}"?`}
+        confirmText="Eliminar"
+        cancelText="Cancelar"
+        useHoldToDelete={true}
+        onConfirm={confirmDelete}
+        onCancel={() => {
+          setShowDeleteDialog(false);
+          setFormatToDelete(null);
+        }}
+        confirmColor={COLORS.error}
+        icon="trash-2"
+      />
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
+  container: Platform.select({
+    web: {
+      height: '100vh',
+      display: 'flex',
+      flexDirection: 'column',
+      backgroundColor: COLORS.background,
+    },
+    default: {
+      flex: 1,
+      backgroundColor: COLORS.background,
+    },
+  }),
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -504,9 +741,21 @@ const styles = StyleSheet.create({
   placeholder: {
     width: 40,
   },
-  listContainer: {
-    padding: 16,
+  scrollView: Platform.select({
+    web: {
+      flex: 1,
+      overflow: 'auto',
+      WebkitOverflowScrolling: 'touch',
+    },
+    default: {
+      flex: 1,
+    },
+  }),
+  scrollContentContainer: {
     flexGrow: 1,
+  },
+  content: {
+    padding: 16,
   },
   formatItem: {
     backgroundColor: COLORS.surface,

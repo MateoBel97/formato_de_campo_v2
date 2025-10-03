@@ -1,8 +1,9 @@
-import React, { useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Platform } from 'react-native';
+import React, { useRef, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform } from 'react-native';
 import { Feather, FontAwesome } from '@expo/vector-icons';
 import { useMeasurement } from '../context/MeasurementContext';
 import { COLORS, DRAWER_ITEMS } from '../constants';
+import ConfirmDialog from '../components/ConfirmDialog';
 
 import GeneralInfoScreen from '../screens/GeneralInfoScreen';
 import MeasurementPointsScreen from '../screens/MeasurementPointsScreen';
@@ -24,13 +25,18 @@ const TabNavigator: React.FC<TabNavigatorProps> = ({ navigation }) => {
   const [activeTab, setActiveTab] = React.useState('GeneralInfo');
   const { state: measurementState } = useMeasurement();
   const photoRegistryRef = useRef<PhotoRegistryScreenRef>(null);
+  const [showAccessDialog, setShowAccessDialog] = useState(false);
+  const [accessDeniedMessage, setAccessDeniedMessage] = useState('');
 
-  const restrictedPages = ['MeasurementResults', 'QualitativeData', 'ExternalEvents', 'PhotoRegistry', 'ResultsSummary', 'Export'];
+  const restrictedPages = ['MeasurementPoints', 'WeatherConditions', 'TechnicalInfo', 'Inspection', 'MeasurementResults', 'QualitativeData', 'ExternalEvents', 'PhotoRegistry', 'ResultsSummary', 'Export'];
 
   const isTechnicalInfoComplete = () => {
     const technicalInfo = measurementState.currentFormat?.technicalInfo;
     if (!technicalInfo) return false;
-    
+
+    // scanningMethod is only required for emission measurement type
+    const scanningMethodValid = technicalInfo.measurementType !== 'emission' || !!technicalInfo.scanningMethod;
+
     return !!(
       technicalInfo.measurementType &&
       (technicalInfo.schedule.diurnal || technicalInfo.schedule.nocturnal) &&
@@ -40,14 +46,14 @@ const TabNavigator: React.FC<TabNavigatorProps> = ({ navigation }) => {
       (technicalInfo.calibrator.selected !== 'other' || technicalInfo.calibrator.other) &&
       technicalInfo.weatherStation.selected &&
       (technicalInfo.weatherStation.selected !== 'other' || technicalInfo.weatherStation.other) &&
-      technicalInfo.scanningMethod
+      scanningMethodValid
     );
   };
 
   const areAllInspectionFieldsTrue = () => {
     const inspection = measurementState.currentFormat?.inspection;
     if (!inspection) return false;
-    
+
     return (
       inspection.pointAssignment &&
       inspection.calibrationVerification &&
@@ -59,17 +65,138 @@ const TabNavigator: React.FC<TabNavigatorProps> = ({ navigation }) => {
     );
   };
 
-  const canAccessPage = (pageName: string) => {
-    if (!restrictedPages.includes(pageName)) return true;
-    return isTechnicalInfoComplete() && areAllInspectionFieldsTrue();
+  const areCalibrationAndVerificationComplete = () => {
+    const currentFormat = measurementState.currentFormat;
+    if (!currentFormat) return false;
+
+    const measurementResults = currentFormat.measurementResults || [];
+    const measurementPoints = currentFormat.measurementPoints || [];
+    const schedules = ['diurnal', 'nocturnal'] as const;
+
+    // If no measurement points, cannot export
+    if (measurementPoints.length === 0) return false;
+
+    // Check each point-schedule combination
+    for (const point of measurementPoints) {
+      for (const schedule of schedules) {
+        // Skip if schedule not enabled
+        if (schedule === 'diurnal' && !currentFormat.technicalInfo?.schedule.diurnal) continue;
+        if (schedule === 'nocturnal' && !currentFormat.technicalInfo?.schedule.nocturnal) continue;
+
+        const result = measurementResults.find(
+          r => r.pointId === point.id && r.schedule === schedule
+        );
+
+        // If no data for this point-schedule, validation fails
+        if (!result) return false;
+
+        // Validate based on measurement type
+        switch (result.type) {
+          case 'emission':
+            if (!result.emission) return false;
+
+            // Must have at least emission intervals
+            if (result.emission.emission.intervals === 0) return false;
+
+            // Check emission intervals
+            if (result.emission.emission.intervals > 0) {
+              const firstInterval = result.emission.emission.data[0];
+              const lastInterval = result.emission.emission.data[result.emission.emission.data.length - 1];
+
+              if (!firstInterval?.calibrationPre || !firstInterval?.verificationPre) return false;
+              if (!lastInterval?.calibrationPost || !lastInterval?.verificationPost) return false;
+            }
+            // Check residual intervals (if any)
+            if (result.emission.residual.intervals > 0) {
+              const firstResidual = result.emission.residual.data[0];
+              const lastResidual = result.emission.residual.data[result.emission.residual.data.length - 1];
+
+              if (!firstResidual?.calibrationPre || !firstResidual?.verificationPre) return false;
+              if (!lastResidual?.calibrationPost || !lastResidual?.verificationPost) return false;
+            }
+            break;
+
+          case 'ambient':
+            if (!result.ambient) return false;
+
+            // First direction (N) needs PRE, last direction (V) needs POST
+            if (!result.ambient.calibrationPreN || !result.ambient.verificationPreN) return false;
+            if (!result.ambient.calibrationPostV || !result.ambient.verificationPostV) return false;
+            break;
+
+          case 'immission':
+            if (!result.immission) return false;
+
+            // Both PRE and POST required
+            if (!result.immission.calibrationPre || !result.immission.verificationPre) return false;
+            if (!result.immission.calibrationPost || !result.immission.verificationPost) return false;
+            break;
+
+          case 'sonometry':
+            if (!result.sonometry) return false;
+
+            // Both PRE and POST required
+            if (!result.sonometry.calibrationPre || !result.sonometry.verificationPre) return false;
+            if (!result.sonometry.calibrationPost || !result.sonometry.verificationPost) return false;
+            break;
+        }
+      }
+    }
+
+    return true;
   };
 
-  const showAccessDeniedAlert = () => {
-    Alert.alert(
-      'Acceso Restringido',
-      'Para acceder a esta sección debe:\n\n• Completar y guardar toda la información técnica\n• Marcar como completados todos los campos de inspección previa',
-      [{ text: 'Entendido', style: 'default' }]
-    );
+  const canAccessPage = (pageName: string) => {
+    if (!restrictedPages.includes(pageName)) return true;
+
+    // Check if general info has been saved
+    const generalInfoSaved = measurementState.generalInfoSaved;
+
+    console.log('🔐 [ACCESS] Checking access for:', pageName, {
+      generalInfoSaved,
+      currentFormatId: measurementState.currentFormat?.id,
+      company: measurementState.currentFormat?.generalInfo?.company || 'EMPTY'
+    });
+
+    // Pages that require general info to be saved first
+    const requiresGeneralInfoPages = ['MeasurementPoints', 'WeatherConditions', 'TechnicalInfo', 'Inspection'];
+    if (requiresGeneralInfoPages.includes(pageName)) {
+      return generalInfoSaved;
+    }
+
+    // Pages that require technical info and inspection
+    const requiresTechnicalPages = ['MeasurementResults', 'QualitativeData', 'ExternalEvents', 'PhotoRegistry', 'ResultsSummary'];
+    const baseRequirements = generalInfoSaved && isTechnicalInfoComplete() && areAllInspectionFieldsTrue();
+
+    if (requiresTechnicalPages.includes(pageName)) {
+      return baseRequirements;
+    }
+
+    // Export page has additional requirements
+    if (pageName === 'Export') {
+      return baseRequirements && areCalibrationAndVerificationComplete();
+    }
+
+    return true;
+  };
+
+  const showAccessDeniedAlert = (pageName: string) => {
+    const requiresGeneralInfoPages = ['MeasurementPoints', 'WeatherConditions', 'TechnicalInfo', 'Inspection'];
+
+    let message = '';
+
+    if (requiresGeneralInfoPages.includes(pageName)) {
+      message = 'Para acceder a esta sección debe:\n\n• Completar y guardar la información general usando el botón "Guardar información"';
+    } else {
+      message = 'Para acceder a esta sección debe:\n\n• Guardar la información general\n• Completar y guardar toda la información técnica\n• Marcar como completados todos los campos de inspección previa';
+
+      if (pageName === 'Export') {
+        message += '\n• Completar calibración PRE y verificación PRE del primer intervalo de cada punto-horario\n• Completar calibración POST y verificación POST del último intervalo de cada punto-horario';
+      }
+    }
+
+    setAccessDeniedMessage(message);
+    setShowAccessDialog(true);
   };
 
   const getIcon = (iconName: string, iconType: string, focused: boolean, isRestricted: boolean = false) => {
@@ -115,6 +242,7 @@ const TabNavigator: React.FC<TabNavigatorProps> = ({ navigation }) => {
               photoRegistryRef.current?.scrollToCroquis();
             }, 100);
           }}
+          onNavigateToWeather={() => setActiveTab('WeatherConditions')}
         />;
       case 'Export':
         return <ExportScreen />;
@@ -178,7 +306,7 @@ const TabNavigator: React.FC<TabNavigatorProps> = ({ navigation }) => {
                   if (canAccess) {
                     setActiveTab(item.name);
                   } else {
-                    showAccessDeniedAlert();
+                    showAccessDeniedAlert(item.name);
                   }
                 }}
               >
@@ -193,6 +321,17 @@ const TabNavigator: React.FC<TabNavigatorProps> = ({ navigation }) => {
       <View style={styles.content}>
         {renderScreen()}
       </View>
+
+      <ConfirmDialog
+        visible={showAccessDialog}
+        title="Acceso Restringido"
+        message={accessDeniedMessage}
+        confirmText="Entendido"
+        onConfirm={() => setShowAccessDialog(false)}
+        onCancel={() => setShowAccessDialog(false)}
+        icon="alert-circle"
+        confirmColor={COLORS.primary}
+      />
     </View>
   );
 };

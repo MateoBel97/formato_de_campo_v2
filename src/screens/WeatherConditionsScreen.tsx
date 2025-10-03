@@ -1,14 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity, Modal, TextInput } from 'react-native';
 import { Formik } from 'formik';
 import * as Yup from 'yup';
 import { Feather } from '@expo/vector-icons';
 import { useMeasurement } from '../context/MeasurementContext';
 import FormInput from '../components/FormInput';
+import FormPicker from '../components/FormPicker';
 import FormButton from '../components/FormButton';
-import { COLORS } from '../constants';
+import { COLORS, WIND_DIRECTIONS, RESCHEDULE_REASONS } from '../constants';
 import { WeatherConditions, WeatherCondition } from '../types';
 import { parseDecimalInput } from '../utils/numberUtils';
+import { generateRescheduleEmailBody, generateRescheduleEmailSubject, copyToClipboard, openEmailClient } from '../utils/emailUtils';
 
 const validationSchema = Yup.object({
   diurnal: Yup.object({
@@ -82,17 +84,31 @@ const validationSchema = Yup.object({
 });
 
 const WeatherConditionsScreen: React.FC = () => {
-  const { state, updateWeatherConditions, saveCurrentFormat } = useMeasurement();
+  const { state, updateWeatherConditions, saveCurrentFormat, setWeatherNavigationSchedule } = useMeasurement();
   const [isSaving, setIsSaving] = useState(false);
   const [selectedSchedule, setSelectedSchedule] = useState('diurnal');
   const [initialValues, setInitialValues] = useState<WeatherConditions | null>(null);
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const hasLoadedInitialData = useRef(false);
 
+  // Reschedule modal state
+  const [showRescheduleModal, setShowRescheduleModal] = useState(false);
+  const [rescheduleReason, setRescheduleReason] = useState('');
+  const [additionalDetails, setAdditionalDetails] = useState('');
+  const [clientEmail, setClientEmail] = useState('');
+
   const currentFormat = state.currentFormat;
   const weatherConditions = currentFormat?.weatherConditions;
   const technicalInfo = currentFormat?.technicalInfo;
 
+  // Initialize selected schedule from navigation state
+  useEffect(() => {
+    if (state.selectedWeatherScheduleForNavigation) {
+      setSelectedSchedule(state.selectedWeatherScheduleForNavigation);
+      // Clear the navigation state after using it
+      setWeatherNavigationSchedule(null as any);
+    }
+  }, [state.selectedWeatherScheduleForNavigation]);
 
   // Initialize form values only once
   useEffect(() => {
@@ -162,6 +178,74 @@ const WeatherConditionsScreen: React.FC = () => {
       setSelectedSchedule('diurnal');
     }
   }, [selectedSchedule]);
+
+  const handleOpenRescheduleModal = () => {
+    if (!currentFormat?.generalInfo) {
+      Alert.alert('Atención', 'Por favor, completa la información general antes de reprogramar.');
+      return;
+    }
+    // Set default reason to weather
+    setRescheduleReason('weather');
+    setShowRescheduleModal(true);
+  };
+
+  const handleCloseRescheduleModal = () => {
+    setShowRescheduleModal(false);
+    setRescheduleReason('');
+    setAdditionalDetails('');
+    setClientEmail('');
+  };
+
+  const handleCopyAndOpenEmail = async () => {
+    if (!rescheduleReason) {
+      Alert.alert('Atención', 'Por favor, selecciona un motivo de reprogramación.');
+      return;
+    }
+
+    if (!currentFormat?.generalInfo) {
+      Alert.alert('Error', 'No se pudo acceder a la información general.');
+      return;
+    }
+
+    const emailBody = generateRescheduleEmailBody({
+      generalInfo: currentFormat.generalInfo,
+      reason: rescheduleReason,
+      additionalDetails,
+      clientEmail,
+    });
+
+    const emailSubject = generateRescheduleEmailSubject(currentFormat.generalInfo);
+
+    // Try to copy to clipboard
+    const copied = await copyToClipboard(emailBody);
+
+    if (copied) {
+      Alert.alert(
+        'Texto copiado',
+        'El texto del correo ha sido copiado al portapapeles. ¿Deseas abrir el cliente de correo?',
+        [
+          { text: 'Solo copiar', style: 'cancel', onPress: handleCloseRescheduleModal },
+          {
+            text: 'Abrir correo',
+            onPress: async () => {
+              await openEmailClient(emailSubject, emailBody, clientEmail);
+              handleCloseRescheduleModal();
+            },
+          },
+        ]
+      );
+    } else {
+      // If copy failed, just try to open email client
+      await openEmailClient(emailSubject, emailBody, clientEmail);
+      handleCloseRescheduleModal();
+    }
+  };
+
+  const hasRainfall = (values: WeatherConditions) => {
+    const diurnalHasRain = parseDecimalInput(values.diurnal.precipitation.initial) > 0 || parseDecimalInput(values.diurnal.precipitation.final) > 0;
+    const nocturnalHasRain = parseDecimalInput(values.nocturnal.precipitation.initial) > 0 || parseDecimalInput(values.nocturnal.precipitation.final) > 0;
+    return diurnalHasRain || nocturnalHasRain;
+  };
 
   const getDisplayValue = (value: any) => {
     if (value === 0 || value === '' || value === null || value === undefined) {
@@ -334,21 +418,21 @@ const WeatherConditionsScreen: React.FC = () => {
 
       <View style={styles.row}>
         <View style={styles.column}>
-          <FormInput
+          <FormPicker
             label="Dirección del viento inicial"
             value={values[prefix].windDirection.initial}
-            onChangeText={(text) => handleChange(`${prefix}.windDirection.initial`)(text.toUpperCase())}
+            onSelect={(value) => handleChange(`${prefix}.windDirection.initial`)(value)}
+            options={WIND_DIRECTIONS}
             error={touched[prefix]?.windDirection?.initial && errors[prefix]?.windDirection?.initial}
-            placeholder="Ej: N, NE, E, SE, S, SW, W, NW"
           />
         </View>
         <View style={styles.column}>
-          <FormInput
+          <FormPicker
             label="Dirección del viento final"
             value={values[prefix].windDirection.final}
-            onChangeText={(text) => handleChange(`${prefix}.windDirection.final`)(text.toUpperCase())}
+            onSelect={(value) => handleChange(`${prefix}.windDirection.final`)(value)}
+            options={WIND_DIRECTIONS}
             error={touched[prefix]?.windDirection?.final && errors[prefix]?.windDirection?.final}
-            placeholder="Ej: N, NE, E, SE, S, SW, W, NW"
           />
         </View>
       </View>
@@ -494,6 +578,27 @@ const WeatherConditionsScreen: React.FC = () => {
                   handleChange,
                   handleAutoSave
                 )}
+
+                {/* Rainfall Warning */}
+                {hasRainfall(values) && (
+                  <View style={styles.rainfallWarningContainer}>
+                    <View style={styles.rainfallWarningHeader}>
+                      <Feather name="alert-triangle" size={20} color={COLORS.error} />
+                      <Text style={styles.rainfallWarningTitle}>Condiciones Inadecuadas</Text>
+                    </View>
+                    <Text style={styles.rainfallWarningText}>
+                      No se pueden realizar mediciones de ruido bajo condiciones de lluvia. Debe reprogramar medición.
+                    </Text>
+                    <FormButton
+                      title="📅 Reprogramar Medición"
+                      onPress={handleOpenRescheduleModal}
+                      variant="outline"
+                      size="large"
+                      style={styles.rescheduleButton}
+                    />
+                  </View>
+                )}
+
                 <View style={styles.bottomSpacing} />
               </View>
             );
@@ -507,6 +612,72 @@ const WeatherConditionsScreen: React.FC = () => {
           </View>
         )}
       </View>
+
+      {/* Reschedule Modal */}
+      <Modal
+        visible={showRescheduleModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={handleCloseRescheduleModal}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Reprogramar Medición</Text>
+              <TouchableOpacity onPress={handleCloseRescheduleModal} style={styles.closeButton}>
+                <Feather name="x" size={24} color={COLORS.text} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+              <Text style={styles.modalLabel}>Motivo de reprogramación *</Text>
+              <View style={styles.pickerContainer}>
+                <FormPicker
+                  label=""
+                  value={rescheduleReason}
+                  onSelect={setRescheduleReason}
+                  options={RESCHEDULE_REASONS}
+                />
+              </View>
+
+              <Text style={styles.modalLabel}>Correo del cliente (opcional)</Text>
+              <TextInput
+                style={styles.textInput}
+                value={clientEmail}
+                onChangeText={setClientEmail}
+                placeholder="cliente@ejemplo.com"
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+
+              <Text style={styles.modalLabel}>Detalles adicionales (opcional)</Text>
+              <TextInput
+                style={[styles.textInput, styles.textArea]}
+                value={additionalDetails}
+                onChangeText={setAdditionalDetails}
+                placeholder="Agrega información adicional sobre la reprogramación..."
+                multiline
+                numberOfLines={4}
+                textAlignVertical="top"
+              />
+
+              <View style={styles.modalButtons}>
+                <FormButton
+                  title="Cancelar"
+                  onPress={handleCloseRescheduleModal}
+                  variant="outline"
+                  style={styles.modalButton}
+                />
+                <FormButton
+                  title="Copiar y Abrir"
+                  onPress={handleCopyAndOpenEmail}
+                  style={styles.modalButton}
+                />
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 };
@@ -618,6 +789,99 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: COLORS.textSecondary,
     textAlign: 'center',
+  },
+  rainfallWarningContainer: {
+    backgroundColor: COLORS.error + '10',
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.error,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+  },
+  rainfallWarningHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  rainfallWarningTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.error,
+  },
+  rainfallWarningText: {
+    fontSize: 14,
+    color: COLORS.text,
+    lineHeight: 20,
+    marginBottom: 16,
+  },
+  rescheduleButton: {
+    marginTop: 8,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContainer: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 12,
+    width: '100%',
+    maxWidth: 500,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: COLORS.text,
+  },
+  closeButton: {
+    padding: 4,
+  },
+  modalContent: {
+    padding: 20,
+  },
+  modalLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.text,
+    marginBottom: 8,
+    marginTop: 16,
+  },
+  pickerContainer: {
+    marginBottom: 8,
+  },
+  textInput: {
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    color: COLORS.text,
+    backgroundColor: COLORS.surface,
+  },
+  textArea: {
+    minHeight: 100,
+    textAlignVertical: 'top',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 24,
+    marginBottom: 20,
+  },
+  modalButton: {
+    flex: 1,
   },
 });
 

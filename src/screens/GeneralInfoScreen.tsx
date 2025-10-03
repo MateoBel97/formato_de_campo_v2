@@ -61,9 +61,27 @@ const GeneralInfoScreen: React.FC = () => {
   const handleSubmit = async (values: GeneralInfo) => {
     try {
       setIsSaving(true);
+
+      // Update the general info in the reducer first
       updateGeneralInfo(values);
-      await saveCurrentFormat();
+
+      // Build the updated format manually to pass to saveCurrentFormat
+      if (!currentFormat) {
+        throw new Error('No current format available');
+      }
+
+      const updatedFormat = {
+        ...currentFormat,
+        generalInfo: values,
+        updatedAt: new Date().toISOString()
+      };
+
+      // Save with the updated format
+      await saveCurrentFormat(updatedFormat);
+
+      // Mark as saved
       markGeneralInfoAsSaved();
+
       setShowToast(true);
       console.log('✅ Información general guardada correctamente');
     } catch (error) {

@@ -40,7 +40,7 @@ echo.
 echo [2/5] Verificando npm...
 echo ----------------------------------------
 
-npm --version >nul 2>&1
+call npm --version >nul 2>&1
 if %errorlevel% neq 0 (
     echo.
     echo ❌ ERROR: npm no está instalado.

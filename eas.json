@@ -29,12 +29,11 @@
         "resourceClass": "m-medium"
       },
       "android": {
-        "buildType": "apk"
+        "buildType": "apk",
+        "env": {
+          "EXPO_USE_PREBUILD": "1"
+        }
       }
-    },
-    "web": {
-      "extends": "production",
-      "platform": "web"
     }
   },
   "submit": {

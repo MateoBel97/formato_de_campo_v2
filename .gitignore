@@ -39,3 +39,9 @@ coverage/
 tmp/
 temp/
 temp_expo/
+
+# Claude Code configuration
+.claude/
+
+# Documentation (root level only)
+/*.md

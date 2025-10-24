@@ -6,6 +6,7 @@ import { useMeasurement } from '../context/MeasurementContext';
 import FormInput from '../components/FormInput';
 import FormPicker from '../components/FormPicker';
 import FormCheckbox from '../components/FormCheckbox';
+import EquipmentList from '../components/EquipmentList';
 import { COLORS, MEASUREMENT_TYPES, SOUND_METERS, CALIBRATORS, WEATHER_STATIONS, SCANNING_METHODS } from '../constants';
 import { TechnicalInfo, MeasurementType } from '../types';
 
@@ -17,27 +18,18 @@ const validationSchema = Yup.object({
   }).test('at-least-one', 'Debe seleccionar al menos un horario', (value) => {
     return value.diurnal || value.nocturnal;
   }),
-  soundMeter: Yup.object({
-    selected: Yup.string().required('El sonómetro es requerido'),
-    other: Yup.string().when('selected', {
-      is: 'other',
-      then: (schema) => schema.required('Especifique el sonómetro'),
-    }),
-  }),
-  calibrator: Yup.object({
-    selected: Yup.string().required('El calibrador es requerido'),
-    other: Yup.string().when('selected', {
-      is: 'other',
-      then: (schema) => schema.required('Especifique el calibrador'),
-    }),
-  }),
-  weatherStation: Yup.object({
-    selected: Yup.string().required('La estación meteorológica es requerida'),
-    other: Yup.string().when('selected', {
-      is: 'other',
-      then: (schema) => schema.required('Especifique la estación meteorológica'),
-    }),
-  }),
+  soundMeters: Yup.array()
+    .of(Yup.string())
+    .min(1, 'Debe agregar al menos un sonómetro')
+    .max(5, 'Máximo 5 sonómetros permitidos'),
+  calibrators: Yup.array()
+    .of(Yup.string())
+    .min(1, 'Debe agregar al menos un calibrador')
+    .max(5, 'Máximo 5 calibradores permitidos'),
+  weatherStations: Yup.array()
+    .of(Yup.string())
+    .min(1, 'Debe agregar al menos una estación meteorológica')
+    .max(5, 'Máximo 5 estaciones meteorológicas permitidas'),
   scanningMethod: Yup.string().when('measurementType', {
     is: 'emission',
     then: (schema) => schema.required('El método de barrido usado es requerido'),
@@ -60,18 +52,9 @@ const TechnicalInfoScreen: React.FC = () => {
       diurnal: false,
       nocturnal: false,
     },
-    soundMeter: {
-      selected: '',
-      other: '',
-    },
-    calibrator: {
-      selected: '',
-      other: '',
-    },
-    weatherStation: {
-      selected: '',
-      other: '',
-    },
+    soundMeters: [],
+    calibrators: [],
+    weatherStations: [],
     scanningMethod: '',
   };
 
@@ -102,9 +85,9 @@ const TechnicalInfoScreen: React.FC = () => {
         const technicalInfoData: TechnicalInfo = {
           measurementType: values.measurementType as MeasurementType,
           schedule: values.schedule,
-          soundMeter: values.soundMeter,
-          calibrator: values.calibrator,
-          weatherStation: values.weatherStation,
+          soundMeters: values.soundMeters,
+          calibrators: values.calibrators,
+          weatherStations: values.weatherStations,
           scanningMethod: values.scanningMethod,
         };
         updateTechnicalInfo(technicalInfoData);
@@ -212,69 +195,57 @@ const TechnicalInfoScreen: React.FC = () => {
               </View>
 
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Sonómetro</Text>
-                <FormPicker
-                  label="Sonómetro"
-                  value={values.soundMeter.selected}
-                  onSelect={(value) => setFieldValue('soundMeter.selected', value)}
-                  options={SOUND_METERS}
-                  error={touched.soundMeter?.selected && errors.soundMeter?.selected ? errors.soundMeter.selected : undefined}
+                <EquipmentList
+                  title="Sonómetros"
+                  items={values.soundMeters}
+                  predefinedOptions={SOUND_METERS}
+                  onAdd={(item) => {
+                    setFieldValue('soundMeters', [...values.soundMeters, item]);
+                  }}
+                  onRemove={(item) => {
+                    setFieldValue('soundMeters', values.soundMeters.filter(i => i !== item));
+                  }}
+                  maxItems={5}
                   required
+                  error={touched.soundMeters && errors.soundMeters ? String(errors.soundMeters) : undefined}
+                  customButtonText="Agregar otro sonómetro"
                 />
-                {values.soundMeter.selected === 'other' && (
-                  <FormInput
-                    label="Especifique el sonómetro"
-                    value={values.soundMeter.other || ''}
-                    onChangeText={(text) => setFieldValue('soundMeter.other', text)}
-                    error={touched.soundMeter?.other && errors.soundMeter?.other ? errors.soundMeter.other : undefined}
-                    placeholder="Ingrese el modelo del sonómetro"
-                    required
-                  />
-                )}
               </View>
 
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Calibrador</Text>
-                <FormPicker
-                  label="Calibrador"
-                  value={values.calibrator.selected}
-                  onSelect={(value) => setFieldValue('calibrator.selected', value)}
-                  options={CALIBRATORS}
-                  error={touched.calibrator?.selected && errors.calibrator?.selected ? errors.calibrator.selected : undefined}
+                <EquipmentList
+                  title="Calibradores"
+                  items={values.calibrators}
+                  predefinedOptions={CALIBRATORS}
+                  onAdd={(item) => {
+                    setFieldValue('calibrators', [...values.calibrators, item]);
+                  }}
+                  onRemove={(item) => {
+                    setFieldValue('calibrators', values.calibrators.filter(i => i !== item));
+                  }}
+                  maxItems={5}
                   required
+                  error={touched.calibrators && errors.calibrators ? String(errors.calibrators) : undefined}
+                  customButtonText="Agregar otro calibrador"
                 />
-                {values.calibrator.selected === 'other' && (
-                  <FormInput
-                    label="Especifique el calibrador"
-                    value={values.calibrator.other || ''}
-                    onChangeText={(text) => setFieldValue('calibrator.other', text)}
-                    error={touched.calibrator?.other && errors.calibrator?.other ? errors.calibrator.other : undefined}
-                    placeholder="Ingrese el modelo del calibrador"
-                    required
-                  />
-                )}
               </View>
 
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Estación Meteorológica</Text>
-                <FormPicker
-                  label="Estación meteorológica"
-                  value={values.weatherStation.selected}
-                  onSelect={(value) => setFieldValue('weatherStation.selected', value)}
-                  options={WEATHER_STATIONS}
-                  error={touched.weatherStation?.selected && errors.weatherStation?.selected ? errors.weatherStation.selected : undefined}
+                <EquipmentList
+                  title="Estaciones Meteorológicas"
+                  items={values.weatherStations}
+                  predefinedOptions={WEATHER_STATIONS}
+                  onAdd={(item) => {
+                    setFieldValue('weatherStations', [...values.weatherStations, item]);
+                  }}
+                  onRemove={(item) => {
+                    setFieldValue('weatherStations', values.weatherStations.filter(i => i !== item));
+                  }}
+                  maxItems={5}
                   required
+                  error={touched.weatherStations && errors.weatherStations ? String(errors.weatherStations) : undefined}
+                  customButtonText="Agregar otra estación meteorológica"
                 />
-                {values.weatherStation.selected === 'other' && (
-                  <FormInput
-                    label="Especifique la estación meteorológica"
-                    value={values.weatherStation.other || ''}
-                    onChangeText={(text) => setFieldValue('weatherStation.other', text)}
-                    error={touched.weatherStation?.other && errors.weatherStation?.other ? errors.weatherStation.other : undefined}
-                    placeholder="Ingrese el modelo de la estación"
-                    required
-                  />
-                )}
               </View>
 
               <View style={styles.section}>

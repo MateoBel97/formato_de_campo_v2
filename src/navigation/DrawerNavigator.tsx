@@ -37,15 +37,21 @@ const TabNavigator: React.FC<TabNavigatorProps> = ({ navigation }) => {
     // scanningMethod is only required for emission measurement type
     const scanningMethodValid = technicalInfo.measurementType !== 'emission' || !!technicalInfo.scanningMethod;
 
+    // Check for new array-based structure
+    const hasEquipment = technicalInfo.soundMeters && technicalInfo.calibrators && technicalInfo.weatherStations &&
+      technicalInfo.soundMeters.length > 0 &&
+      technicalInfo.calibrators.length > 0 &&
+      technicalInfo.weatherStations.length > 0;
+
+    // Check for old structure (for backward compatibility)
+    const hasOldStructure = technicalInfo.soundMeter?.selected &&
+      technicalInfo.calibrator?.selected &&
+      technicalInfo.weatherStation?.selected;
+
     return !!(
       technicalInfo.measurementType &&
       (technicalInfo.schedule.diurnal || technicalInfo.schedule.nocturnal) &&
-      technicalInfo.soundMeter.selected &&
-      (technicalInfo.soundMeter.selected !== 'other' || technicalInfo.soundMeter.other) &&
-      technicalInfo.calibrator.selected &&
-      (technicalInfo.calibrator.selected !== 'other' || technicalInfo.calibrator.other) &&
-      technicalInfo.weatherStation.selected &&
-      (technicalInfo.weatherStation.selected !== 'other' || technicalInfo.weatherStation.other) &&
+      (hasEquipment || hasOldStructure) &&
       scanningMethodValid
     );
   };

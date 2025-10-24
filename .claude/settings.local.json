@@ -36,7 +36,10 @@
       "Read(c:\\Users\\Mateo B\\Downloads/**)",
       "Read(//c/Users/Mateo B/Downloads/**)",
       "Read(//c/Users/Mateo B/AppData/Local/**)",
-      "Bash(findstr:*)"
+      "Bash(findstr:*)",
+      "Bash(git push:*)",
+      "Bash(timeout 30 npm run start-legacy:*)",
+      "Bash(git rm:*)"
     ],
     "deny": [],
     "defaultMode": "acceptEdits"

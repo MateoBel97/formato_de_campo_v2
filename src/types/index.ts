@@ -25,19 +25,23 @@ export interface TechnicalInfo {
     diurnal: boolean;
     nocturnal: boolean;
   };
-  soundMeter: {
-    selected: string;
-    other?: string;
-  };
-  calibrator: {
-    selected: string;
-    other?: string;
-  };
-  weatherStation: {
-    selected: string;
-    other?: string;
-  };
+  soundMeters: string[]; // Array of sound meter names (e.g., ["ACU-11", "ACU-22A", "Custom Model"])
+  calibrators: string[]; // Array of calibrator names
+  weatherStations: string[]; // Array of weather station names
   scanningMethod: string;
+  // Legacy fields for backward compatibility (will be automatically migrated)
+  soundMeter?: {
+    selected: string;
+    other?: string;
+  };
+  calibrator?: {
+    selected: string;
+    other?: string;
+  };
+  weatherStation?: {
+    selected: string;
+    other?: string;
+  };
 }
 
 export interface EmissionInterval {

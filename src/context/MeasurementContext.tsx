@@ -135,18 +135,9 @@ const createEmptyFormat = (): MeasurementFormat => ({
       diurnal: false,
       nocturnal: false,
     },
-    soundMeter: {
-      selected: '',
-      other: '',
-    },
-    calibrator: {
-      selected: '',
-      other: '',
-    },
-    weatherStation: {
-      selected: '',
-      other: '',
-    },
+    soundMeters: [],
+    calibrators: [],
+    weatherStations: [],
     scanningMethod: '',
   },
   inspection: {
@@ -1028,6 +1019,66 @@ export const MeasurementProvider: React.FC<{ children: ReactNode }> = ({ childre
     });
   };
 
+  /**
+   * Migrates old TechnicalInfo structure to new array-based structure
+   * Old: { soundMeter: { selected, other }, ... }
+   * New: { soundMeters: string[], calibrators: string[], weatherStations: string[] }
+   */
+  const migrateTechnicalInfo = (formats: MeasurementFormat[]): MeasurementFormat[] => {
+    return formats.map(format => {
+      const technicalInfo = format.technicalInfo;
+
+      // Check if migration is needed (old structure has soundMeter object)
+      if (technicalInfo.soundMeter || technicalInfo.calibrator || technicalInfo.weatherStation) {
+        console.log(`🔄 [MIGRATION] Migrating technical info for format ${format.id}`);
+
+        // Helper function to convert old structure to array
+        const convertToArray = (oldStructure?: { selected: string; other?: string }): string[] => {
+          if (!oldStructure || !oldStructure.selected) return [];
+
+          // If 'other' was selected, use the custom value
+          if (oldStructure.selected === 'other' && oldStructure.other) {
+            return [oldStructure.other.trim()];
+          }
+
+          // If a predefined option was selected (and it's not empty or placeholder)
+          if (oldStructure.selected && oldStructure.selected !== '' && oldStructure.selected !== 'other') {
+            return [oldStructure.selected];
+          }
+
+          return [];
+        };
+
+        const migratedTechnicalInfo = {
+          ...technicalInfo,
+          soundMeters: convertToArray(technicalInfo.soundMeter),
+          calibrators: convertToArray(technicalInfo.calibrator),
+          weatherStations: convertToArray(technicalInfo.weatherStation),
+          // Remove old structure
+          soundMeter: undefined,
+          calibrator: undefined,
+          weatherStation: undefined,
+        };
+
+        return {
+          ...format,
+          technicalInfo: migratedTechnicalInfo,
+        };
+      }
+
+      // Already in new format or initialize arrays if missing
+      return {
+        ...format,
+        technicalInfo: {
+          ...technicalInfo,
+          soundMeters: technicalInfo.soundMeters || [],
+          calibrators: technicalInfo.calibrators || [],
+          weatherStations: technicalInfo.weatherStations || [],
+        },
+      };
+    });
+  };
+
   const loadSavedFormats = async () => {
     try {
       console.log('Loading saved formats...');
@@ -1072,6 +1123,9 @@ export const MeasurementProvider: React.FC<{ children: ReactNode }> = ({ childre
             // Migrate blob URLs to placeholders
             const originalFormatsJson = JSON.stringify(savedFormats);
             savedFormats = migrateBlobPhotos(savedFormats);
+
+            // Migrate old technical info structure to new array-based structure
+            savedFormats = migrateTechnicalInfo(savedFormats);
             const migratedFormatsJson = JSON.stringify(savedFormats);
 
             // If any migration occurred, save the migrated formats back to storage
@@ -1130,7 +1184,10 @@ export const MeasurementProvider: React.FC<{ children: ReactNode }> = ({ childre
 
           // Migrate blob URLs in current format
           const originalCurrentFormatJson = JSON.stringify(normalizedCurrentFormat);
-          const migratedCurrentFormat = migrateBlobPhotos([normalizedCurrentFormat])[0];
+          let migratedCurrentFormat = migrateBlobPhotos([normalizedCurrentFormat])[0];
+
+          // Migrate technical info structure
+          migratedCurrentFormat = migrateTechnicalInfo([migratedCurrentFormat])[0];
           const migratedCurrentFormatJson = JSON.stringify(migratedCurrentFormat);
 
           // If migration occurred, save the migrated current format back to storage

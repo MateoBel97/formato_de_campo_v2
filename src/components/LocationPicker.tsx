@@ -4,8 +4,7 @@ import * as Location from 'expo-location';
 import { Feather } from '@expo/vector-icons';
 import FormInput from './FormInput';
 import FormButton from './FormButton';
-import FormPicker from './FormPicker';
-import { COLORS, COORDINATE_ORIGINS } from '../constants';
+import { COLORS } from '../constants';
 import { convertDecimalToDMS, isValidDMSFormat } from '../utils/numberUtils';
 import {
   geographicToPlane,
@@ -31,27 +30,29 @@ const LocationPicker: React.FC<LocationPickerProps> = ({
   errors,
 }) => {
   const [loadingLocation, setLoadingLocation] = useState(false);
-  const [selectedOrigin, setSelectedOrigin] = useState('');
   const [planeCoordinates, setPlaneCoordinates] = useState<{ east: number; north: number } | null>(null);
 
-  // Calculate plane coordinates when coordinates or origin change
+  // Calculate plane coordinates automatically using MAGNA-SIRGAS 3116 (Bogotá origin)
   useEffect(() => {
-    if (coordinatesN && coordinatesW && selectedOrigin) {
+    if (coordinatesN && coordinatesW) {
       try {
         // Parse DMS coordinates to decimal degrees
         const latDecimal = parseCoordinate(coordinatesN);
         const lonDecimal = parseCoordinate(coordinatesW);
 
         if (latDecimal !== null && lonDecimal !== null) {
-          // Find the selected origin
-          const origin = MAGNA_SIRGAS_ORIGINS.find(o => o.code === selectedOrigin);
+          // Always use MAGNA-SIRGAS 3116 (Bogotá origin)
+          const origin = MAGNA_SIRGAS_ORIGINS.find(o => o.code === 'BOGOTA');
 
           if (origin) {
             // Convert to plane coordinates (longitude should be negative for West)
             const plane = geographicToPlane(latDecimal, -lonDecimal, origin);
             setPlaneCoordinates(plane);
+          } else {
+            setPlaneCoordinates(null);
           }
         } else {
+          // If coordinates cannot be parsed, leave plane coordinates empty
           setPlaneCoordinates(null);
         }
       } catch (error) {
@@ -61,7 +62,7 @@ const LocationPicker: React.FC<LocationPickerProps> = ({
     } else {
       setPlaneCoordinates(null);
     }
-  }, [coordinatesN, coordinatesW, selectedOrigin]);
+  }, [coordinatesN, coordinatesW]);
 
   const getCurrentLocation = async () => {
     try {
@@ -145,20 +146,19 @@ const LocationPicker: React.FC<LocationPickerProps> = ({
         </Text>
       </View>
 
-      {/* Coordinate Origin Selector and Plane Coordinates */}
+      {/* Plane Coordinates using MAGNA-SIRGAS 3116 */}
       {coordinatesN && coordinatesW && (
         <View style={styles.planeCoordinatesSection}>
-          <Text style={styles.sectionTitle}>Coordenadas Planas MAGNA-SIRGAS</Text>
+          <Text style={styles.sectionTitle}>Coordenadas Planas MAGNA-SIRGAS 3116</Text>
 
-          <FormPicker
-            label="Origen de Coordenadas"
-            selectedValue={selectedOrigin}
-            onValueChange={setSelectedOrigin}
-            items={COORDINATE_ORIGINS}
-            placeholder="Seleccione el origen"
-          />
+          <View style={[styles.infoContainer, { marginBottom: 12 }]}>
+            <Feather name="info" size={16} color={COLORS.info} />
+            <Text style={styles.infoText}>
+              Sistema: MAGNA-SIRGAS 3116 (Origen Bogotá). Las coordenadas planas se calculan automáticamente.
+            </Text>
+          </View>
 
-          {planeCoordinates && selectedOrigin && (
+          {planeCoordinates ? (
             <View style={styles.planeCoordinatesDisplay}>
               <View style={styles.planeCoordinateRow}>
                 <Text style={styles.planeCoordinateLabel}>Este:</Text>
@@ -173,13 +173,11 @@ const LocationPicker: React.FC<LocationPickerProps> = ({
                 </Text>
               </View>
             </View>
-          )}
-
-          {!selectedOrigin && (
-            <View style={[styles.infoContainer, { marginTop: 12 }]}>
-              <Feather name="info" size={16} color={COLORS.info} />
+          ) : (
+            <View style={[styles.infoContainer, { backgroundColor: COLORS.warning + '20', borderLeftColor: COLORS.warning }]}>
+              <Feather name="alert-circle" size={16} color={COLORS.warning} />
               <Text style={styles.infoText}>
-                Selecciona un origen para calcular las coordenadas planas.
+                No se pudieron calcular las coordenadas planas. Verifica que las coordenadas GPS tengan el formato correcto (0°00.0'00.00").
               </Text>
             </View>
           )}

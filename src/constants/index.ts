@@ -53,7 +53,6 @@ export const SOUND_METERS = [
   { label: 'ACU-22A', value: 'ACU-22A' },
   { label: 'ACU-23A', value: 'ACU-23A' },
   { label: 'ACU-24A', value: 'ACU-24A' },
-  { label: 'Otro', value: 'other' },
 ];
 
 export const CALIBRATORS = [
@@ -62,7 +61,6 @@ export const CALIBRATORS = [
   { label: 'ACU-22B', value: 'ACU-22B' },
   { label: 'ACU-25B', value: 'ACU-25B' },
   { label: 'ACU-24B', value: 'ACU-24B' },
-  { label: 'Otro', value: 'other' },
 ];
 
 export const WEATHER_STATIONS = [
@@ -70,7 +68,6 @@ export const WEATHER_STATIONS = [
   { label: 'ACU-26', value: 'ACU-26' },
   { label: 'ACU-27', value: 'ACU-27' },
   { label: 'ACU-28', value: 'ACU-28' },
-  { label: 'Otro', value: 'other' },
   { label: 'N/A', value: 'N/A' },
 ];
 

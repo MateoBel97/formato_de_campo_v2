@@ -30,11 +30,7 @@ const validationSchema = Yup.object({
     .of(Yup.string())
     .min(1, 'Debe agregar al menos una estación meteorológica')
     .max(5, 'Máximo 5 estaciones meteorológicas permitidas'),
-  scanningMethod: Yup.string().when('measurementType', {
-    is: 'emission',
-    then: (schema) => schema.required('El método de barrido usado es requerido'),
-    otherwise: (schema) => schema.notRequired(),
-  }),
+  scanningMethod: Yup.string().notRequired(),
 });
 
 const TechnicalInfoScreen: React.FC = () => {
@@ -249,16 +245,7 @@ const TechnicalInfoScreen: React.FC = () => {
               </View>
 
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Método de Barrido Usado</Text>
-                <FormPicker
-                  label="Método de barrido usado"
-                  value={values.scanningMethod}
-                  onSelect={(value) => setFieldValue('scanningMethod', value)}
-                  options={SCANNING_METHODS}
-                  error={touched.scanningMethod && errors.scanningMethod ? errors.scanningMethod : undefined}
-                  required
-                  disabled={values.measurementType !== 'emission'}
-                />
+                <Text style={styles.sectionTitle}>Herramienta de medición de distancia empleada en el barrido</Text>
               </View>
 
             </View>

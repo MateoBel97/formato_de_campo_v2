@@ -32,8 +32,6 @@ const MeasurementPointsScreen: React.FC = () => {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   const scrollViewRef = useRef<ScrollView>(null);
-  const formContainerRef = useRef<View>(null);
-  const nameInputRef = useRef<View>(null);
 
   const currentFormat = state.currentFormat;
   const measurementPoints = currentFormat?.measurementPoints || [];
@@ -56,43 +54,6 @@ const MeasurementPointsScreen: React.FC = () => {
     };
   }, []);
 
-  // Function to scroll to form when it opens - always executes
-  const scrollToForm = () => {
-    if (scrollViewRef.current) {
-      setTimeout(() => {
-        if (formContainerRef.current) {
-          // Try to use measureInWindow for precise positioning
-          formContainerRef.current.measureInWindow((x, y, width, height) => {
-            if (y !== undefined && y > 0) {
-              // Position the form title at the top with some margin
-              const marginFromTop = 80; // Margin to show title clearly
-              const scrollPosition = Math.max(0, y - marginFromTop);
-              
-              scrollViewRef.current?.scrollTo({ 
-                y: scrollPosition, 
-                animated: true 
-              });
-            } else {
-              // Fallback: scroll to where the form typically appears
-              const approximateFormPosition = measurementPoints.length * 120 + 200; // Approximate position
-              scrollViewRef.current?.scrollTo({ 
-                y: approximateFormPosition, 
-                animated: true 
-              });
-            }
-          });
-        } else {
-          // Final fallback: scroll to where the form typically appears
-          const approximateFormPosition = measurementPoints.length * 120 + 200; // Approximate position
-          scrollViewRef.current?.scrollTo({ 
-            y: approximateFormPosition, 
-            animated: true 
-          });
-        }
-      }, 400); // Increase timeout to ensure form is fully rendered
-    }
-  };
-  
 
   const getInitialValues = () => {
     if (editingPoint) {
@@ -166,8 +127,6 @@ const MeasurementPointsScreen: React.FC = () => {
   const handleEditPoint = (point: MeasurementPoint) => {
     setEditingPoint(point);
     setShowAddForm(false);
-    // Scroll to form after state update
-    setTimeout(scrollToForm, 150);
   };
 
   const renderPointItem = ({ item, drag, isActive, getIndex }: RenderItemParams<MeasurementPoint>) => {
@@ -256,14 +215,12 @@ const MeasurementPointsScreen: React.FC = () => {
             title="Agregar Punto de Medición"
             onPress={() => {
               setShowAddForm(true);
-              // Scroll to form after state update
-              setTimeout(scrollToForm, 150);
             }}
             size="large"
             style={styles.addButton}
           />
         ) : (
-          <View ref={formContainerRef} style={styles.addForm}>
+          <View style={styles.addForm}>
             <View style={styles.formHeader}>
               <Text style={styles.formTitle}>
                 {editingPoint ? 'Editar Punto de Medición' : 'Nuevo Punto de Medición'}
@@ -288,17 +245,15 @@ const MeasurementPointsScreen: React.FC = () => {
             >
               {({ values, errors, touched, handleChange, handleSubmit, setFieldValue, resetForm }) => (
                 <View>
-                  <View ref={nameInputRef}>
-                    <FormInput
-                      label="Nombre del punto"
-                      value={values.name}
-                      onChangeText={handleChange('name')}
-                      error={touched.name && errors.name ? errors.name : undefined}
-                      placeholder="Ej: Punto 1, Entrada principal, etc."
-                      required
-                      selectTextOnFocus={false}
-                    />
-                  </View>
+                  <FormInput
+                    label="Nombre del punto"
+                    value={values.name}
+                    onChangeText={handleChange('name')}
+                    error={touched.name && errors.name ? errors.name : undefined}
+                    placeholder="Ej: Punto 1, Entrada principal, etc."
+                    required
+                    selectTextOnFocus={false}
+                  />
 
                   <LocationPicker
                     coordinatesN={values.coordinatesN}
@@ -393,6 +348,7 @@ const MeasurementPointsScreen: React.FC = () => {
         ListFooterComponent={renderListFooter}
         contentContainerStyle={{ paddingBottom: keyboardHeight > 0 ? keyboardHeight + 50 : 50 }}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       />
 
       <ConfirmDialog

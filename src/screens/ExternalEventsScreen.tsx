@@ -187,7 +187,7 @@ const ExternalEventsScreen: React.FC = () => {
         <View style={styles.eventInfo}>
           <Text style={styles.eventName}>{event.name}</Text>
           <Text style={styles.eventDetails}>
-            Nivel: {event.level} dBA • Hora: {event.time} • Duración: {event.duration} min
+            Nivel: {event.level} dBA • Hora: {event.time} • Duración: {event.duration} seg
           </Text>
         </View>
         <View style={styles.eventActions}>

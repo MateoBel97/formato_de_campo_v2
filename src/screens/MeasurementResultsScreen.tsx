@@ -1075,59 +1075,12 @@ const MeasurementResultsScreen: React.FC = () => {
 
   const renderAmbientIntervalFields = (direction: string) => {
     const measurement = getCurrentAmbientMeasurement(direction);
-    
+
     return (
       <View style={styles.currentIntervalContainer}>
         <Text style={styles.currentIntervalTitle}>
           Dirección {direction}
         </Text>
-        
-        <FormInput
-          label="LAeq (dBA)"
-          value={getTempInputValue(`ambient_${direction}_soundLevel`, measurement.soundLevel)}
-          onChangeText={(text) => updateTempInputValue(`ambient_${direction}_soundLevel`, text)}
-          onBlur={() => saveAmbientMeasurementData(direction, 'soundLevel', getTempInputValue(`ambient_${direction}_soundLevel`, measurement.soundLevel))}
-          keyboardType="decimal-pad"
-          placeholder="0.0"
-          horizontal
-        />
-        
-        <FormInput
-          label="# archivo"
-          value={getTempInputValue(`ambient_${direction}_fileNumber`, measurement.fileNumber)}
-          onChangeText={(text) => updateTempInputValue(`ambient_${direction}_fileNumber`, text)}
-          onBlur={() => saveAmbientMeasurementData(direction, 'fileNumber', getTempInputValue(`ambient_${direction}_fileNumber`, measurement.fileNumber))}
-          keyboardType="numeric"
-          placeholder="000"
-          horizontal
-        />
-        
-        <TimePicker
-          label="Hora inicial"
-          value={measurement.startTime}
-          onTimeChange={(time) => {
-            // Save start time and get updated ambient data
-            const updatedAmbientData = saveAmbientMeasurementData(direction, 'startTime', time);
-            
-            // Auto-adjust end time (5 minutes for ambient measurements)
-            const adjustedEndTime = adjustEndTime(time, 3); // Using 3 to get 5-minute adjustment
-            if (adjustedEndTime && updatedAmbientData) {
-              // Use the updated ambient data to preserve the startTime we just saved
-              saveAmbientMeasurementData(direction, 'endTime', adjustedEndTime, updatedAmbientData);
-              showToast('Hora final ajustada automáticamente');
-            }
-          }}
-          horizontal
-        />
-        
-        <TimePicker
-          label="Hora final"
-          value={measurement.endTime}
-          onTimeChange={(time) => saveAmbientMeasurementData(direction, 'endTime', time)}
-          horizontal
-        />
-
-        <FormSeparator />
 
         <FormInput
           label="Verificación PRE (dB)"
@@ -1208,6 +1161,53 @@ const MeasurementResultsScreen: React.FC = () => {
           photo={measurement.calibrationPostPhoto}
           onPhotoSelected={(photo) => saveAmbientCalibrationPhoto(direction, 'calibrationPost', photo)}
           onPhotoRemoved={() => removeAmbientCalibrationPhoto(direction, 'calibrationPost')}
+        />
+
+        <FormSeparator />
+
+        <FormInput
+          label="LAeq (dBA)"
+          value={getTempInputValue(`ambient_${direction}_soundLevel`, measurement.soundLevel)}
+          onChangeText={(text) => updateTempInputValue(`ambient_${direction}_soundLevel`, text)}
+          onBlur={() => saveAmbientMeasurementData(direction, 'soundLevel', getTempInputValue(`ambient_${direction}_soundLevel`, measurement.soundLevel))}
+          keyboardType="decimal-pad"
+          placeholder="0.0"
+          horizontal
+        />
+
+        <FormInput
+          label="# archivo"
+          value={getTempInputValue(`ambient_${direction}_fileNumber`, measurement.fileNumber)}
+          onChangeText={(text) => updateTempInputValue(`ambient_${direction}_fileNumber`, text)}
+          onBlur={() => saveAmbientMeasurementData(direction, 'fileNumber', getTempInputValue(`ambient_${direction}_fileNumber`, measurement.fileNumber))}
+          keyboardType="numeric"
+          placeholder="000"
+          horizontal
+        />
+
+        <TimePicker
+          label="Hora inicial"
+          value={measurement.startTime}
+          onTimeChange={(time) => {
+            // Save start time and get updated ambient data
+            const updatedAmbientData = saveAmbientMeasurementData(direction, 'startTime', time);
+
+            // Auto-adjust end time (5 minutes for ambient measurements)
+            const adjustedEndTime = adjustEndTime(time, 3); // Using 3 to get 5-minute adjustment
+            if (adjustedEndTime && updatedAmbientData) {
+              // Use the updated ambient data to preserve the startTime we just saved
+              saveAmbientMeasurementData(direction, 'endTime', adjustedEndTime, updatedAmbientData);
+              showToast('Hora final ajustada automáticamente');
+            }
+          }}
+          horizontal
+        />
+
+        <TimePicker
+          label="Hora final"
+          value={measurement.endTime}
+          onTimeChange={(time) => saveAmbientMeasurementData(direction, 'endTime', time)}
+          horizontal
         />
       </View>
     );
@@ -1469,104 +1469,12 @@ const MeasurementResultsScreen: React.FC = () => {
 
   const renderImmissionFields = () => {
     const measurement = getCurrentImmissionMeasurement();
-    
+
     return (
       <View style={styles.currentIntervalContainer}>
         <Text style={styles.currentIntervalTitle}>
           Medición de Inmisión
         </Text>
-        
-        <FormInput
-          label="LAeq (dBA)"
-          value={getTempInputValue('immission_soundLevelLeq', measurement.soundLevelLeq)}
-          onChangeText={(text) => updateTempInputValue('immission_soundLevelLeq', text)}
-          onBlur={() => saveImmissionMeasurementData('soundLevelLeq', getTempInputValue('immission_soundLevelLeq', measurement.soundLevelLeq))}
-          keyboardType="decimal-pad"
-          placeholder="0.0"
-          horizontal
-        />
-        
-        <FormInput
-          label="LAmin (dBA)"
-          value={getTempInputValue('immission_soundLevelMin', measurement.soundLevelMin)}
-          onChangeText={(text) => updateTempInputValue('immission_soundLevelMin', text)}
-          onBlur={() => saveImmissionMeasurementData('soundLevelMin', getTempInputValue('immission_soundLevelMin', measurement.soundLevelMin))}
-          keyboardType="decimal-pad"
-          placeholder="0.0"
-          horizontal
-        />
-        
-        <FormInput
-          label="LAmax (dBA)"
-          value={getTempInputValue('immission_soundLevelMax', measurement.soundLevelMax)}
-          onChangeText={(text) => updateTempInputValue('immission_soundLevelMax', text)}
-          onBlur={() => saveImmissionMeasurementData('soundLevelMax', getTempInputValue('immission_soundLevelMax', measurement.soundLevelMax))}
-          keyboardType="decimal-pad"
-          placeholder="0.0"
-          horizontal
-        />
-        
-        <FormInput
-          label="# archivo"
-          value={getTempInputValue('immission_fileNumber', measurement.fileNumber)}
-          onChangeText={(text) => updateTempInputValue('immission_fileNumber', text)}
-          onBlur={() => saveImmissionMeasurementData('fileNumber', getTempInputValue('immission_fileNumber', measurement.fileNumber))}
-          keyboardType="numeric"
-          placeholder="000"
-          horizontal
-        />
-        
-        <TimePicker
-          label="Hora inicial"
-          value={measurement.startTime}
-          onTimeChange={(time) => {
-            saveImmissionMeasurementData('startTime', time);
-            
-            // Auto-adjust end time (15 minutes for immission measurements)
-            const startDate = new Date();
-            const timeRegex = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i;
-            const match = time.match(timeRegex);
-            if (match) {
-              const hour = parseInt(match[1]);
-              const minute = parseInt(match[2]);
-              const period = match[3].toUpperCase();
-              
-              let hour24 = hour;
-              if (period === 'AM' && hour === 12) {
-                hour24 = 0;
-              } else if (period === 'PM' && hour !== 12) {
-                hour24 = hour + 12;
-              }
-              
-              startDate.setHours(hour24, minute, 0, 0);
-              const endDate = new Date(startDate);
-              endDate.setMinutes(endDate.getMinutes() + 15); // Add 15 minutes
-              
-              let endHour = endDate.getHours();
-              const endMinute = endDate.getMinutes();
-              const endPeriod = endHour >= 12 ? 'PM' : 'AM';
-              
-              endHour = endHour % 12;
-              if (endHour === 0) endHour = 12;
-              
-              const formattedMinute = endMinute.toString().padStart(2, '0');
-              const adjustedEndTime = `${endHour}:${formattedMinute} ${endPeriod}`;
-              
-              saveImmissionMeasurementData('endTime', adjustedEndTime);
-              showToast('Hora final ajustada automáticamente (+15 min)');
-            }
-          }}
-          horizontal
-        />
-        
-        <TimePicker
-          label="Hora final"
-          value={measurement.endTime}
-          onTimeChange={(time) => saveImmissionMeasurementData('endTime', time)}
-          horizontal
-        />
-
-        <FormSeparator />
 
         <FormInput
           label="Verificación PRE (dB)"
@@ -1647,6 +1555,98 @@ const MeasurementResultsScreen: React.FC = () => {
           photo={measurement.calibrationPostPhoto}
           onPhotoSelected={(photo) => saveImmissionCalibrationPhoto('calibrationPost', photo)}
           onPhotoRemoved={() => removeImmissionCalibrationPhoto('calibrationPost')}
+        />
+
+        <FormSeparator />
+
+        <FormInput
+          label="LAeq (dBA)"
+          value={getTempInputValue('immission_soundLevelLeq', measurement.soundLevelLeq)}
+          onChangeText={(text) => updateTempInputValue('immission_soundLevelLeq', text)}
+          onBlur={() => saveImmissionMeasurementData('soundLevelLeq', getTempInputValue('immission_soundLevelLeq', measurement.soundLevelLeq))}
+          keyboardType="decimal-pad"
+          placeholder="0.0"
+          horizontal
+        />
+
+        <FormInput
+          label="LAmin (dBA)"
+          value={getTempInputValue('immission_soundLevelMin', measurement.soundLevelMin)}
+          onChangeText={(text) => updateTempInputValue('immission_soundLevelMin', text)}
+          onBlur={() => saveImmissionMeasurementData('soundLevelMin', getTempInputValue('immission_soundLevelMin', measurement.soundLevelMin))}
+          keyboardType="decimal-pad"
+          placeholder="0.0"
+          horizontal
+        />
+
+        <FormInput
+          label="LAmax (dBA)"
+          value={getTempInputValue('immission_soundLevelMax', measurement.soundLevelMax)}
+          onChangeText={(text) => updateTempInputValue('immission_soundLevelMax', text)}
+          onBlur={() => saveImmissionMeasurementData('soundLevelMax', getTempInputValue('immission_soundLevelMax', measurement.soundLevelMax))}
+          keyboardType="decimal-pad"
+          placeholder="0.0"
+          horizontal
+        />
+
+        <FormInput
+          label="# archivo"
+          value={getTempInputValue('immission_fileNumber', measurement.fileNumber)}
+          onChangeText={(text) => updateTempInputValue('immission_fileNumber', text)}
+          onBlur={() => saveImmissionMeasurementData('fileNumber', getTempInputValue('immission_fileNumber', measurement.fileNumber))}
+          keyboardType="numeric"
+          placeholder="000"
+          horizontal
+        />
+
+        <TimePicker
+          label="Hora inicial"
+          value={measurement.startTime}
+          onTimeChange={(time) => {
+            saveImmissionMeasurementData('startTime', time);
+
+            // Auto-adjust end time (15 minutes for immission measurements)
+            const startDate = new Date();
+            const timeRegex = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i;
+            const match = time.match(timeRegex);
+            if (match) {
+              const hour = parseInt(match[1]);
+              const minute = parseInt(match[2]);
+              const period = match[3].toUpperCase();
+
+              let hour24 = hour;
+              if (period === 'AM' && hour === 12) {
+                hour24 = 0;
+              } else if (period === 'PM' && hour !== 12) {
+                hour24 = hour + 12;
+              }
+
+              startDate.setHours(hour24, minute, 0, 0);
+              const endDate = new Date(startDate);
+              endDate.setMinutes(endDate.getMinutes() + 15); // Add 15 minutes
+
+              let endHour = endDate.getHours();
+              const endMinute = endDate.getMinutes();
+              const endPeriod = endHour >= 12 ? 'PM' : 'AM';
+
+              endHour = endHour % 12;
+              if (endHour === 0) endHour = 12;
+
+              const formattedMinute = endMinute.toString().padStart(2, '0');
+              const adjustedEndTime = `${endHour}:${formattedMinute} ${endPeriod}`;
+
+              saveImmissionMeasurementData('endTime', adjustedEndTime);
+              showToast('Hora final ajustada automáticamente (+15 min)');
+            }
+          }}
+          horizontal
+        />
+
+        <TimePicker
+          label="Hora final"
+          value={measurement.endTime}
+          onTimeChange={(time) => saveImmissionMeasurementData('endTime', time)}
+          horizontal
         />
       </View>
     );
@@ -1832,48 +1832,12 @@ const MeasurementResultsScreen: React.FC = () => {
 
   const renderSonometryFields = () => {
     const measurement = getCurrentSonometryMeasurement();
-    
+
     return (
       <View style={styles.currentIntervalContainer}>
         <Text style={styles.currentIntervalTitle}>
           Medición de Sonometría
         </Text>
-        
-        <FormInput
-          label="LAeq (dBA)"
-          value={getTempInputValue('sonometry_soundLevelLeq', measurement.soundLevelLeq)}
-          onChangeText={(text) => updateTempInputValue('sonometry_soundLevelLeq', text)}
-          onBlur={() => saveSonometryMeasurementData('soundLevelLeq', getTempInputValue('sonometry_soundLevelLeq', measurement.soundLevelLeq))}
-          keyboardType="decimal-pad"
-          placeholder="0.0"
-          horizontal
-        />
-        
-        <FormInput
-          label="# archivo"
-          value={getTempInputValue('sonometry_fileNumber', measurement.fileNumber)}
-          onChangeText={(text) => updateTempInputValue('sonometry_fileNumber', text)}
-          onBlur={() => saveSonometryMeasurementData('fileNumber', getTempInputValue('sonometry_fileNumber', measurement.fileNumber))}
-          keyboardType="numeric"
-          placeholder="000"
-          horizontal
-        />
-        
-        <TimePicker
-          label="Hora inicial"
-          value={measurement.startTime}
-          onTimeChange={(time) => saveSonometryMeasurementData('startTime', time)}
-          horizontal
-        />
-        
-        <TimePicker
-          label="Hora final"
-          value={measurement.endTime}
-          onTimeChange={(time) => saveSonometryMeasurementData('endTime', time)}
-          horizontal
-        />
-
-        <FormSeparator />
 
         <FormInput
           label="Verificación PRE (dB)"
@@ -1954,6 +1918,42 @@ const MeasurementResultsScreen: React.FC = () => {
           photo={measurement.calibrationPostPhoto}
           onPhotoSelected={(photo) => saveSonometryCalibrationPhoto('calibrationPost', photo)}
           onPhotoRemoved={() => removeSonometryCalibrationPhoto('calibrationPost')}
+        />
+
+        <FormSeparator />
+
+        <FormInput
+          label="LAeq (dBA)"
+          value={getTempInputValue('sonometry_soundLevelLeq', measurement.soundLevelLeq)}
+          onChangeText={(text) => updateTempInputValue('sonometry_soundLevelLeq', text)}
+          onBlur={() => saveSonometryMeasurementData('soundLevelLeq', getTempInputValue('sonometry_soundLevelLeq', measurement.soundLevelLeq))}
+          keyboardType="decimal-pad"
+          placeholder="0.0"
+          horizontal
+        />
+
+        <FormInput
+          label="# archivo"
+          value={getTempInputValue('sonometry_fileNumber', measurement.fileNumber)}
+          onChangeText={(text) => updateTempInputValue('sonometry_fileNumber', text)}
+          onBlur={() => saveSonometryMeasurementData('fileNumber', getTempInputValue('sonometry_fileNumber', measurement.fileNumber))}
+          keyboardType="numeric"
+          placeholder="000"
+          horizontal
+        />
+
+        <TimePicker
+          label="Hora inicial"
+          value={measurement.startTime}
+          onTimeChange={(time) => saveSonometryMeasurementData('startTime', time)}
+          horizontal
+        />
+
+        <TimePicker
+          label="Hora final"
+          value={measurement.endTime}
+          onTimeChange={(time) => saveSonometryMeasurementData('endTime', time)}
+          horizontal
         />
       </View>
     );
@@ -2112,85 +2112,10 @@ const MeasurementResultsScreen: React.FC = () => {
 
     const renderCurrentIntervalFields = (prefix: string, intervalIndex: number) => {
       const measurement = getCurrentMeasurement(prefix, intervalIndex);
-      
+
       return (
         <View style={styles.currentIntervalContainer}>
           <Text style={styles.currentIntervalTitle}>Intervalo {intervalIndex + 1}</Text>
-          
-          <FormInput
-            label="LAeq (dBA)"
-            value={getTempInputValue(`${prefix}_${intervalIndex}_soundLevel`, measurement.soundLevel)}
-            onChangeText={(text) => updateTempInputValue(`${prefix}_${intervalIndex}_soundLevel`, text)}
-            onBlur={() => {
-              const laeqValue = getTempInputValue(`${prefix}_${intervalIndex}_soundLevel`, measurement.soundLevel);
-              const l90Value = getTempInputValue(`${prefix}_${intervalIndex}_percentile90`, measurement.percentile90);
-              saveMeasurementData(prefix, intervalIndex, 'soundLevel', laeqValue);
-              validateL90VsLAeq(prefix, intervalIndex, laeqValue, l90Value);
-            }}
-            keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'numeric'}
-            placeholder="0.0"
-            horizontal
-          />
-
-          <FormInput
-            label="L90 (dBA)"
-            value={getTempInputValue(`${prefix}_${intervalIndex}_percentile90`, measurement.percentile90)}
-            onChangeText={(text) => updateTempInputValue(`${prefix}_${intervalIndex}_percentile90`, text)}
-            onBlur={() => {
-              const l90Value = getTempInputValue(`${prefix}_${intervalIndex}_percentile90`, measurement.percentile90);
-              const laeqValue = getTempInputValue(`${prefix}_${intervalIndex}_soundLevel`, measurement.soundLevel);
-              saveMeasurementData(prefix, intervalIndex, 'percentile90', l90Value);
-              validateL90VsLAeq(prefix, intervalIndex, laeqValue, l90Value);
-            }}
-            keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'numeric'}
-            placeholder="0.0"
-            horizontal
-            error={validationErrors[`${prefix}_${intervalIndex}_l90_validation`]}
-          />
-          
-          <FormInput
-            label="# archivo"
-            value={getTempInputValue(`${prefix}_${intervalIndex}_fileNumber`, measurement.fileNumber)}
-            onChangeText={(text) => updateTempInputValue(`${prefix}_${intervalIndex}_fileNumber`, text)}
-            onBlur={() => saveMeasurementData(prefix, intervalIndex, 'fileNumber', getTempInputValue(`${prefix}_${intervalIndex}_fileNumber`, measurement.fileNumber))}
-            keyboardType="numeric"
-            placeholder="000"
-            horizontal
-          />
-          
-          <TimePicker
-            label="Hora inicial"
-            value={measurement.startTime}
-            onTimeChange={(time) => {
-              console.log('TimePicker startTime onTimeChange called:', { prefix, intervalIndex, time });
-              
-              // Save start time and get updated emission data
-              const updatedEmissionData = saveMeasurementData(prefix, intervalIndex, 'startTime', time);
-              
-              // Auto-adjust end time based on intervals using the updated data
-              const intervals = getIntervalsCount(prefix);
-              console.log('Intervals count for auto-adjust:', intervals);
-              if (intervals === 1 || intervals === 3) {
-                const adjustedEndTime = adjustEndTime(time, intervals);
-                console.log('Adjusted end time:', adjustedEndTime);
-                if (adjustedEndTime && updatedEmissionData) {
-                  // Use the updated emission data to preserve the startTime we just saved
-                  saveMeasurementData(prefix, intervalIndex, 'endTime', adjustedEndTime, updatedEmissionData);
-                  showToast('Hora final ajustada automáticamente');
-                }
-              }
-            }}
-            horizontal
-          />
-          
-          <TimePicker
-            label="Hora final"
-            value={measurement.endTime}
-            onTimeChange={(time) => saveMeasurementData(prefix, intervalIndex, 'endTime', time)}
-            horizontal
-          />
-
-          <FormSeparator />
 
           <FormInput
             label="Verificación PRE (dB)"
@@ -2271,6 +2196,81 @@ const MeasurementResultsScreen: React.FC = () => {
             photo={measurement.calibrationPostPhoto}
             onPhotoSelected={(photo) => saveCalibrationPhoto(prefix, intervalIndex, 'calibrationPost', photo)}
             onPhotoRemoved={() => removeCalibrationPhoto(prefix, intervalIndex, 'calibrationPost')}
+          />
+
+          <FormSeparator />
+
+          <FormInput
+            label="LAeq (dBA)"
+            value={getTempInputValue(`${prefix}_${intervalIndex}_soundLevel`, measurement.soundLevel)}
+            onChangeText={(text) => updateTempInputValue(`${prefix}_${intervalIndex}_soundLevel`, text)}
+            onBlur={() => {
+              const laeqValue = getTempInputValue(`${prefix}_${intervalIndex}_soundLevel`, measurement.soundLevel);
+              const l90Value = getTempInputValue(`${prefix}_${intervalIndex}_percentile90`, measurement.percentile90);
+              saveMeasurementData(prefix, intervalIndex, 'soundLevel', laeqValue);
+              validateL90VsLAeq(prefix, intervalIndex, laeqValue, l90Value);
+            }}
+            keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'numeric'}
+            placeholder="0.0"
+            horizontal
+          />
+
+          <FormInput
+            label="L90 (dBA)"
+            value={getTempInputValue(`${prefix}_${intervalIndex}_percentile90`, measurement.percentile90)}
+            onChangeText={(text) => updateTempInputValue(`${prefix}_${intervalIndex}_percentile90`, text)}
+            onBlur={() => {
+              const l90Value = getTempInputValue(`${prefix}_${intervalIndex}_percentile90`, measurement.percentile90);
+              const laeqValue = getTempInputValue(`${prefix}_${intervalIndex}_soundLevel`, measurement.soundLevel);
+              saveMeasurementData(prefix, intervalIndex, 'percentile90', l90Value);
+              validateL90VsLAeq(prefix, intervalIndex, laeqValue, l90Value);
+            }}
+            keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'numeric'}
+            placeholder="0.0"
+            horizontal
+            error={validationErrors[`${prefix}_${intervalIndex}_l90_validation`]}
+          />
+
+          <FormInput
+            label="# archivo"
+            value={getTempInputValue(`${prefix}_${intervalIndex}_fileNumber`, measurement.fileNumber)}
+            onChangeText={(text) => updateTempInputValue(`${prefix}_${intervalIndex}_fileNumber`, text)}
+            onBlur={() => saveMeasurementData(prefix, intervalIndex, 'fileNumber', getTempInputValue(`${prefix}_${intervalIndex}_fileNumber`, measurement.fileNumber))}
+            keyboardType="numeric"
+            placeholder="000"
+            horizontal
+          />
+
+          <TimePicker
+            label="Hora inicial"
+            value={measurement.startTime}
+            onTimeChange={(time) => {
+              console.log('TimePicker startTime onTimeChange called:', { prefix, intervalIndex, time });
+
+              // Save start time and get updated emission data
+              const updatedEmissionData = saveMeasurementData(prefix, intervalIndex, 'startTime', time);
+
+              // Auto-adjust end time based on intervals using the updated data
+              const intervals = getIntervalsCount(prefix);
+              console.log('Intervals count for auto-adjust:', intervals);
+              if (intervals === 1 || intervals === 3) {
+                const adjustedEndTime = adjustEndTime(time, intervals);
+                console.log('Adjusted end time:', adjustedEndTime);
+                if (adjustedEndTime && updatedEmissionData) {
+                  // Use the updated emission data to preserve the startTime we just saved
+                  saveMeasurementData(prefix, intervalIndex, 'endTime', adjustedEndTime, updatedEmissionData);
+                  showToast('Hora final ajustada automáticamente');
+                }
+              }
+            }}
+            horizontal
+          />
+
+          <TimePicker
+            label="Hora final"
+            value={measurement.endTime}
+            onTimeChange={(time) => saveMeasurementData(prefix, intervalIndex, 'endTime', time)}
+            horizontal
           />
         </View>
       );

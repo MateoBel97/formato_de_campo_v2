@@ -7,7 +7,7 @@ import {
   documentDirectory
 } from 'expo-file-system/legacy';
 import { captureRef } from 'react-native-view-shot';
-import { createWatermarkedImageForExport, formatTimestamp, formatCoordinates } from './imageUtils';
+import { createWatermarkedImageForExport, formatTimestamp, formatCoordinates, DetailedProgressInfo } from './imageUtils';
 import { Photo } from '../types';
 
 export interface WatermarkedPhoto extends Photo {
@@ -16,7 +16,7 @@ export interface WatermarkedPhoto extends Photo {
 
 export const processPhotosForExport = async (
   photos: Photo[],
-  onProgress?: (progress: number, message: string) => void
+  onProgress?: (progress: number, message: string, detailedInfo?: DetailedProgressInfo) => void
 ): Promise<WatermarkedPhoto[]> => {
   const processedPhotos: WatermarkedPhoto[] = [];
   const totalPhotos = photos.length;
@@ -27,15 +27,22 @@ export const processPhotosForExport = async (
 
   for (let i = 0; i < totalPhotos; i++) {
     const photo = photos[i];
-    
+
     try {
       if (onProgress) {
-        onProgress((i / totalPhotos) * 0.9, `Procesando foto ${i + 1} de ${totalPhotos}...`);
+        const detailedInfo: DetailedProgressInfo = {
+          progress: (i / totalPhotos) * 0.9,
+          currentTask: `Procesando foto ${i + 1} de ${totalPhotos}`,
+          imageNumber: i + 1,
+          totalImages: totalPhotos,
+          stage: 'processing_images',
+        };
+        onProgress((i / totalPhotos) * 0.9, `Procesando foto ${i + 1} de ${totalPhotos}...`, detailedInfo);
       }
 
       // Create watermarked version using canvas-like approach
       const watermarkedUri = await createWatermarkedImageFile(photo);
-      
+
       processedPhotos.push({
         ...photo,
         watermarkedUri,

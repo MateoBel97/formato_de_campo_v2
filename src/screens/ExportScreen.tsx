@@ -23,6 +23,7 @@ import { COLORS } from '../constants';
 import { MeasurementFormat, CalibrationPhoto } from '../types';
 import { generateFileName, createDirectoryIfNotExists, cleanupTempDirectory, copyFileWithErrorHandling } from '../utils/exportUtils';
 import { createPhotosZip, createZipFile, FileToZip } from '../utils/zipUtils';
+import { DetailedProgressInfo } from '../utils/imageUtils';
 
 // Helper function to download files in web browser
 const downloadFileInBrowser = (content: string | Blob, fileName: string, mimeType: string) => {
@@ -52,6 +53,7 @@ const ExportScreen: React.FC = () => {
   const { state } = useMeasurement();
   const [loading, setLoading] = useState<string | null>(null);
   const [zipProgress, setZipProgress] = useState<number>(0);
+  const [progressDetails, setProgressDetails] = useState<DetailedProgressInfo | null>(null);
 
   // Helper function to collect all calibration photos from measurement results
   const collectCalibrationPhotos = (format: MeasurementFormat) => {
@@ -357,8 +359,11 @@ const ExportScreen: React.FC = () => {
     }
 
     // Crear ZIP con progreso
-    const result = await createPhotosZip(photosForZip, zipPath, (progress) => {
+    const result = await createPhotosZip(photosForZip, zipPath, (progress, detailedInfo) => {
       setZipProgress(progress * 100);
+      if (detailedInfo) {
+        setProgressDetails(detailedInfo);
+      }
     });
 
     // For web, download the base64 ZIP
@@ -629,8 +634,11 @@ Generado: ${new Date().toLocaleString('es-ES')}
     }
 
     // 5. Crear ZIP con progreso
-    const result = await createZipFile(filesToZip, zipPath, (progress) => {
+    const result = await createZipFile(filesToZip, zipPath, (progress, detailedInfo) => {
       setZipProgress(progress * 100);
+      if (detailedInfo) {
+        setProgressDetails(detailedInfo);
+      }
     });
 
     // 6. For web, download the ZIP
@@ -669,6 +677,7 @@ Generado: ${new Date().toLocaleString('es-ES')}
 
     setLoading(optionId);
     setZipProgress(0);
+    setProgressDetails(null);
     
     // Create timeout for export operations
     const exportTimeout = new Promise((_, reject) => {
@@ -753,6 +762,7 @@ Generado: ${new Date().toLocaleString('es-ES')}
     } finally {
       setLoading(null);
       setZipProgress(0);
+      setProgressDetails(null);
     }
   };
 
@@ -796,23 +806,42 @@ Generado: ${new Date().toLocaleString('es-ES')}
               onPress={() => handleExport(option.id)}
               disabled={loading !== null}
             >
-              <View style={styles.optionContent}>
-                <View style={[styles.iconContainer, { backgroundColor: option.color + '20' }]}>
-                  <Feather name={option.icon as any} size={24} color={option.color} />
+              <View style={styles.optionWrapper}>
+                <View style={styles.optionContent}>
+                  <View style={[styles.iconContainer, { backgroundColor: option.color + '20' }]}>
+                    <Feather name={option.icon as any} size={24} color={option.color} />
+                  </View>
+                  <View style={styles.optionText}>
+                    <Text style={styles.optionTitle}>{option.title}</Text>
+                    <Text style={styles.optionSubtitle}>{option.subtitle}</Text>
+                  </View>
+                  {loading === option.id ? (
+                    <View style={styles.loadingContainer}>
+                      <ActivityIndicator size="small" color={option.color} />
+                      {(option.id === 'photos' || option.id === 'all') && zipProgress > 0 && (
+                        <Text style={styles.progressText}>{Math.round(zipProgress)}%</Text>
+                      )}
+                    </View>
+                  ) : (
+                    <Feather name="arrow-right" size={20} color={COLORS.textSecondary} />
+                  )}
                 </View>
-                <View style={styles.optionText}>
-                  <Text style={styles.optionTitle}>{option.title}</Text>
-                  <Text style={styles.optionSubtitle}>{option.subtitle}</Text>
-                </View>
-                {loading === option.id ? (
-                  <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="small" color={option.color} />
-                    {(option.id === 'photos' || option.id === 'all') && zipProgress > 0 && (
-                      <Text style={styles.progressText}>{Math.round(zipProgress)}%</Text>
+                {loading === option.id && progressDetails && (
+                  <View style={styles.progressDetailsContainer}>
+                    <Text style={styles.progressDetailsText}>
+                      {progressDetails.currentTask}
+                    </Text>
+                    {progressDetails.currentPoint && progressDetails.currentSchedule && (
+                      <Text style={styles.progressDetailsSubtext}>
+                        📍 {progressDetails.currentPoint} - {progressDetails.currentSchedule}
+                      </Text>
+                    )}
+                    {progressDetails.imageNumber && progressDetails.totalImages && (
+                      <Text style={styles.progressDetailsSubtext}>
+                        🖼️ Imagen {progressDetails.imageNumber} de {progressDetails.totalImages}
+                      </Text>
                     )}
                   </View>
-                ) : (
-                  <Feather name="arrow-right" size={20} color={COLORS.textSecondary} />
                 )}
               </View>
             </TouchableOpacity>
@@ -890,11 +919,35 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 3.84,
   },
+  optionWrapper: {
+    width: '100%',
+  },
   optionContent: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 16,
     gap: 16,
+  },
+  progressDetailsContainer: {
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.background,
+    backgroundColor: COLORS.background,
+    borderBottomLeftRadius: 12,
+    borderBottomRightRadius: 12,
+  },
+  progressDetailsText: {
+    fontSize: 13,
+    color: COLORS.text,
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  progressDetailsSubtext: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginTop: 3,
   },
   iconContainer: {
     width: 48,

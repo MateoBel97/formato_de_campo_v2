@@ -19,6 +19,16 @@ export interface WatermarkOptions {
   } | null;
 }
 
+export interface DetailedProgressInfo {
+  progress: number; // 0-1
+  currentTask: string;
+  currentPoint?: string;
+  currentSchedule?: string;
+  imageNumber?: number;
+  totalImages?: number;
+  stage: 'preparing' | 'processing_images' | 'creating_zip' | 'writing_file' | 'complete';
+}
+
 export const addWatermarkToImage = async (
   imageUri: string,
   options: WatermarkOptions,
@@ -52,7 +62,13 @@ export const addWatermarkToImage = async (
 
 export const createWatermarkedImageForExport = async (
   imageUri: string,
-  options: WatermarkOptions
+  options: WatermarkOptions,
+  progressInfo?: {
+    pointName?: string;
+    schedule?: string;
+    imageNumber?: number;
+    totalImages?: number;
+  }
 ): Promise<string> => {
   try {
     // Format the watermark information

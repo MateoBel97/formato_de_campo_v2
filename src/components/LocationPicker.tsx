@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, Text, Alert, StyleSheet, Platform } from 'react-native';
 import * as Location from 'expo-location';
 import { Feather } from '@expo/vector-icons';
@@ -23,51 +23,46 @@ interface LocationPickerProps {
   };
 }
 
-const LocationPicker: React.FC<LocationPickerProps> = ({
+const LocationPicker: React.FC<LocationPickerProps> = React.memo(({
   coordinatesN,
   coordinatesW,
   onCoordinatesChange,
   errors,
 }) => {
   const [loadingLocation, setLoadingLocation] = useState(false);
-  const [planeCoordinates, setPlaneCoordinates] = useState<{ east: number; north: number } | null>(null);
 
   // Calculate plane coordinates automatically using MAGNA-SIRGAS 3116 (Bogotá origin)
-  useEffect(() => {
-    if (coordinatesN && coordinatesW) {
-      try {
-        // Parse DMS coordinates to decimal degrees
-        const latDecimal = parseCoordinate(coordinatesN);
-        const lonDecimal = parseCoordinate(coordinatesW);
-
-        if (latDecimal !== null && lonDecimal !== null) {
-          // Always use MAGNA-SIRGAS 3116 (Bogotá origin)
-          const origin = MAGNA_SIRGAS_ORIGINS.find(o => o.code === 'BOGOTA');
-
-          if (origin) {
-            // Convert to plane coordinates (longitude should be negative for West)
-            const plane = geographicToPlane(latDecimal, -lonDecimal, origin);
-            setPlaneCoordinates(plane);
-          } else {
-            setPlaneCoordinates(null);
-          }
-        } else {
-          // If coordinates cannot be parsed, leave plane coordinates empty
-          setPlaneCoordinates(null);
-        }
-      } catch (error) {
-        console.error('Error calculating plane coordinates:', error);
-        setPlaneCoordinates(null);
-      }
-    } else {
-      setPlaneCoordinates(null);
+  // Using useMemo instead of useEffect to avoid unnecessary re-renders
+  const planeCoordinates = useMemo(() => {
+    if (!coordinatesN || !coordinatesW) {
+      return null;
     }
+
+    try {
+      // Parse DMS coordinates to decimal degrees
+      const latDecimal = parseCoordinate(coordinatesN);
+      const lonDecimal = parseCoordinate(coordinatesW);
+
+      if (latDecimal !== null && lonDecimal !== null) {
+        // Always use MAGNA-SIRGAS 3116 (Bogotá origin)
+        const origin = MAGNA_SIRGAS_ORIGINS.find(o => o.code === 'BOGOTA');
+
+        if (origin) {
+          // Convert to plane coordinates (longitude should be negative for West)
+          return geographicToPlane(latDecimal, -lonDecimal, origin);
+        }
+      }
+    } catch (error) {
+      console.error('Error calculating plane coordinates:', error);
+    }
+
+    return null;
   }, [coordinatesN, coordinatesW]);
 
-  const getCurrentLocation = async () => {
+  const getCurrentLocation = useCallback(async () => {
     try {
       setLoadingLocation(true);
-      
+
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert(
@@ -83,12 +78,12 @@ const LocationPicker: React.FC<LocationPickerProps> = ({
       });
 
       const { latitude, longitude } = location.coords;
-      
+
       const latitudeDMS = convertDecimalToDMS(Math.abs(latitude));
       const longitudeDMS = convertDecimalToDMS(Math.abs(longitude));
-      
+
       onCoordinatesChange(latitudeDMS, longitudeDMS);
-      
+
       Alert.alert(
         'Ubicación obtenida',
         `Coordenadas actualizadas:\nN: ${latitudeDMS}\nW: ${longitudeDMS}`,
@@ -103,7 +98,15 @@ const LocationPicker: React.FC<LocationPickerProps> = ({
     } finally {
       setLoadingLocation(false);
     }
-  };
+  }, [onCoordinatesChange]);
+
+  const handleCoordinatesNChange = useCallback((text: string) => {
+    onCoordinatesChange(text, coordinatesW);
+  }, [onCoordinatesChange, coordinatesW]);
+
+  const handleCoordinatesWChange = useCallback((text: string) => {
+    onCoordinatesChange(coordinatesN, text);
+  }, [onCoordinatesChange, coordinatesN]);
 
   return (
     <View style={styles.container}>
@@ -114,7 +117,7 @@ const LocationPicker: React.FC<LocationPickerProps> = ({
           <FormInput
             label="Coordenadas N"
             value={coordinatesN}
-            onChangeText={(text) => onCoordinatesChange(text, coordinatesW)}
+            onChangeText={handleCoordinatesNChange}
             error={errors?.coordinatesN}
             placeholder="0°00.0'00.00&quot;"
           />
@@ -124,7 +127,7 @@ const LocationPicker: React.FC<LocationPickerProps> = ({
           <FormInput
             label="Coordenadas W"
             value={coordinatesW}
-            onChangeText={(text) => onCoordinatesChange(coordinatesN, text)}
+            onChangeText={handleCoordinatesWChange}
             error={errors?.coordinatesW}
             placeholder="0°00.0'00.00&quot;"
           />
@@ -185,7 +188,7 @@ const LocationPicker: React.FC<LocationPickerProps> = ({
       )}
     </View>
   );
-};
+});
 
 const styles = StyleSheet.create({
   container: {

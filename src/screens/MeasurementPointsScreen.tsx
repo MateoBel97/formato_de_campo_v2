@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, KeyboardAvoidingView, Platform, Keyboard, Dimensions, Alert } from 'react-native';
 import { Formik } from 'formik';
 import * as Yup from 'yup';
@@ -36,13 +36,17 @@ const MeasurementPointsScreen: React.FC = () => {
   const currentFormat = state.currentFormat;
   const measurementPoints = currentFormat?.measurementPoints || [];
 
-  // Keyboard listeners
+  // Keyboard listeners - optimized to reduce re-renders
   useEffect(() => {
     const keyboardWillShow = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-      (e) => setKeyboardHeight(e.endCoordinates.height)
+      (e) => {
+        // Only update if there's a significant change to avoid excessive re-renders
+        const newHeight = e.endCoordinates.height;
+        setKeyboardHeight(prev => Math.abs(prev - newHeight) > 10 ? newHeight : prev);
+      }
     );
-    
+
     const keyboardWillHide = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
       () => setKeyboardHeight(0)
@@ -55,7 +59,7 @@ const MeasurementPointsScreen: React.FC = () => {
   }, []);
 
 
-  const getInitialValues = () => {
+  const getInitialValues = useMemo(() => {
     if (editingPoint) {
       return {
         name: editingPoint.name,
@@ -68,9 +72,9 @@ const MeasurementPointsScreen: React.FC = () => {
       coordinatesN: '',
       coordinatesW: '',
     };
-  };
+  }, [editingPoint]);
 
-  const handleSubmitPoint = async (values: ReturnType<typeof getInitialValues>) => {
+  const handleSubmitPoint = useCallback(async (values: { name: string; coordinatesN: string; coordinatesW: string }) => {
     try {
       setIsAdding(true);
       
@@ -110,26 +114,26 @@ const MeasurementPointsScreen: React.FC = () => {
     } finally {
       setIsAdding(false);
     }
-  };
+  }, [editingPoint, updateMeasurementPoint, saveCurrentFormat, addMeasurementPoint]);
 
-  const handleDeletePoint = (point: MeasurementPoint) => {
+  const handleDeletePoint = useCallback((point: MeasurementPoint) => {
     setPointToDelete(point);
     setShowDeleteDialog(true);
-  };
+  }, []);
 
-  const confirmDelete = async () => {
+  const confirmDelete = useCallback(async () => {
     if (pointToDelete) {
       await deleteMeasurementPoint(pointToDelete.id);
       setPointToDelete(null);
     }
-  };
+  }, [pointToDelete, deleteMeasurementPoint]);
 
-  const handleEditPoint = (point: MeasurementPoint) => {
+  const handleEditPoint = useCallback((point: MeasurementPoint) => {
     setEditingPoint(point);
     setShowAddForm(false);
-  };
+  }, []);
 
-  const renderPointItem = ({ item, drag, isActive, getIndex }: RenderItemParams<MeasurementPoint>) => {
+  const renderPointItem = useCallback(({ item, drag, isActive, getIndex }: RenderItemParams<MeasurementPoint>) => {
     const index = getIndex();
     return (
     <ScaleDecorator>
@@ -177,9 +181,9 @@ const MeasurementPointsScreen: React.FC = () => {
       </TouchableOpacity>
     </ScaleDecorator>
     );
-  };
+  }, [handleEditPoint, handleDeletePoint]);
 
-  const renderEmptyState = () => (
+  const renderEmptyState = useCallback(() => (
     <View style={styles.emptyState}>
       <Feather name="map-pin" size={64} color={COLORS.textSecondary} />
       <Text style={styles.emptyTitle}>No hay puntos de medición</Text>
@@ -187,7 +191,7 @@ const MeasurementPointsScreen: React.FC = () => {
         Agrega puntos de medición para comenzar a registrar datos
       </Text>
     </View>
-  );
+  ), []);
 
   if (!currentFormat) {
     return (
@@ -197,7 +201,7 @@ const MeasurementPointsScreen: React.FC = () => {
     );
   }
 
-  const renderListHeader = () => (
+  const renderListHeader = useCallback(() => (
     <View style={styles.content}>
       <View style={styles.header}>
         <Text style={styles.title}>Puntos de Medición</Text>
@@ -206,20 +210,24 @@ const MeasurementPointsScreen: React.FC = () => {
         </Text>
       </View>
     </View>
-  );
+  ), [measurementPoints.length]);
 
-  const renderListFooter = () => (
+  const renderAddButton = useCallback(() => (
     <View style={styles.content}>
-      {!showAddForm && !editingPoint ? (
-          <FormButton
-            title="Agregar Punto de Medición"
-            onPress={() => {
-              setShowAddForm(true);
-            }}
-            size="large"
-            style={styles.addButton}
-          />
-        ) : (
+      <FormButton
+        title="Agregar Punto de Medición"
+        onPress={() => {
+          setShowAddForm(true);
+        }}
+        size="large"
+        style={styles.addButton}
+      />
+    </View>
+  ), []);
+
+  const renderForm = useCallback(() => (
+    <View style={styles.content}>
+      {(showAddForm || editingPoint) && (
           <View style={styles.addForm}>
             <View style={styles.formHeader}>
               <Text style={styles.formTitle}>
@@ -238,10 +246,11 @@ const MeasurementPointsScreen: React.FC = () => {
 
             <Formik
               key={editingPoint?.id || 'new'}
-              initialValues={getInitialValues()}
+              initialValues={getInitialValues}
               validationSchema={validationSchema}
               onSubmit={handleSubmitPoint}
-              enableReinitialize
+              validateOnChange={false}
+              validateOnBlur={true}
             >
               {({ values, errors, touched, handleChange, handleSubmit, setFieldValue, resetForm }) => (
                 <View>
@@ -253,6 +262,10 @@ const MeasurementPointsScreen: React.FC = () => {
                     placeholder="Ej: Punto 1, Entrada principal, etc."
                     required
                     selectTextOnFocus={false}
+                    returnKeyType="next"
+                    blurOnSubmit={false}
+                    autoCorrect={false}
+                    autoCapitalize="words"
                   />
 
                   <LocationPicker
@@ -292,7 +305,14 @@ const MeasurementPointsScreen: React.FC = () => {
           </View>
         )}
     </View>
-  );
+  ), [showAddForm, editingPoint, getInitialValues, handleSubmitPoint, isAdding]);
+
+  const renderListFooter = useCallback(() => {
+    if (!showAddForm && !editingPoint) {
+      return renderAddButton();
+    }
+    return null;
+  }, [showAddForm, editingPoint, renderAddButton]);
 
   if (measurementPoints.length === 0) {
     return (
@@ -316,6 +336,7 @@ const MeasurementPointsScreen: React.FC = () => {
             </View>
             {renderEmptyState()}
             {renderListFooter()}
+            {renderForm()}
           </View>
         </ScrollView>
 
@@ -339,17 +360,25 @@ const MeasurementPointsScreen: React.FC = () => {
 
   return (
     <GestureHandlerRootView style={styles.container}>
-      <DraggableFlatList
-        data={measurementPoints}
-        renderItem={renderPointItem}
-        keyExtractor={(item) => item.id}
-        onDragEnd={({ data }) => reorderMeasurementPoints(data)}
-        ListHeaderComponent={renderListHeader}
-        ListFooterComponent={renderListFooter}
-        contentContainerStyle={{ paddingBottom: keyboardHeight > 0 ? keyboardHeight + 50 : 50 }}
+      <ScrollView
+        style={styles.scrollContainer}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-      />
+        contentContainerStyle={{ paddingBottom: keyboardHeight > 0 ? keyboardHeight + 50 : 50 }}
+      >
+        <DraggableFlatList
+          data={measurementPoints}
+          renderItem={renderPointItem}
+          keyExtractor={(item) => item.id}
+          onDragEnd={({ data }) => reorderMeasurementPoints(data)}
+          ListHeaderComponent={renderListHeader}
+          ListFooterComponent={renderListFooter}
+          scrollEnabled={false}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        />
+        {renderForm()}
+      </ScrollView>
 
       <ConfirmDialog
       visible={showDeleteDialog}
